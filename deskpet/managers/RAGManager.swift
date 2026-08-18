@@ -9,6 +9,21 @@
 import Defaults
 import Foundation
 
+/// 文档参与对话的方式。
+enum RAGDocumentRole: String, CaseIterable, Codable, Identifiable, Defaults.Serializable {
+    case fixed = "Fixed"
+    case retrieval = "Retrieval"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .fixed: return "固定注入"
+        case .retrieval: return "按需检索"
+        }
+    }
+}
+
 /// 已导入的一份文档（设置页展示 / 管理用）
 struct RAGDocument: Identifiable, Codable, Equatable, Defaults.Serializable {
     let id: UUID
@@ -16,6 +31,30 @@ struct RAGDocument: Identifiable, Codable, Equatable, Defaults.Serializable {
     var sourceName: String
     var chunkCount: Int
     var importedAt: Date
+    var role: RAGDocumentRole
+
+    init(id: UUID, sourcePath: String, sourceName: String, chunkCount: Int, importedAt: Date, role: RAGDocumentRole = .retrieval) {
+        self.id = id
+        self.sourcePath = sourcePath
+        self.sourceName = sourceName
+        self.chunkCount = chunkCount
+        self.importedAt = importedAt
+        self.role = role
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, sourcePath, sourceName, chunkCount, importedAt, role
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        sourcePath = try container.decode(String.self, forKey: .sourcePath)
+        sourceName = try container.decode(String.self, forKey: .sourceName)
+        chunkCount = try container.decode(Int.self, forKey: .chunkCount)
+        importedAt = try container.decode(Date.self, forKey: .importedAt)
+        role = try container.decodeIfPresent(RAGDocumentRole.self, forKey: .role) ?? .retrieval
+    }
 }
 
 /// 文本分块
@@ -57,7 +96,7 @@ final class RAGManager: ObservableObject {
     // MARK: - 导入
 
     /// 导入一组文件：读取 → 分块 → 批量嵌入 → 写入向量库（同名文件覆盖重导）
-    func importFiles(urls: [URL]) async {
+    func importFiles(urls: [URL], role: RAGDocumentRole = .retrieval) async {
         guard !isImporting else { return }
         isImporting = true
         lastError = nil
@@ -68,7 +107,7 @@ final class RAGManager: ObservableObject {
 
         do {
             // 1) 读取并分块（本地操作，快）
-            var pending: [(url: URL, chunks: [TextChunk])] = []
+            var pending: [(url: URL, chunks: [TextChunk], role: RAGDocumentRole)] = []
             var firstError: String?
             for url in urls {
                 do {
@@ -82,7 +121,7 @@ final class RAGManager: ObservableObject {
                         firstError = RAGError.emptyFile(url.lastPathComponent).localizedDescription
                         continue
                     }
-                    pending.append((url, chunks))
+                    pending.append((url, chunks, role))
                 } catch {
                     firstError = error.localizedDescription
                 }
@@ -112,6 +151,7 @@ final class RAGManager: ObservableObject {
                                     "source": item.url.lastPathComponent,
                                     "sourcePath": item.url.path,
                                     "chunkIndex": String(chunk.index),
+                                    "role": item.role.rawValue,
                                 ],
                                 embedding: embeddings[i]
                             )
@@ -123,7 +163,7 @@ final class RAGManager: ObservableObject {
                 }
 
                 try await VectorStoreManager.shared.upsertChunks(documents)
-                updateRegistry(url: item.url, chunkCount: documents.count)
+                updateRegistry(url: item.url, chunkCount: documents.count, role: item.role)
             }
 
             importStatus = "导入完成，共 \(total) 个分块"
@@ -161,10 +201,11 @@ final class RAGManager: ObservableObject {
         throw RAGError.unreadableFile(url.lastPathComponent)
     }
 
-    private func updateRegistry(url: URL, chunkCount: Int) {
+    private func updateRegistry(url: URL, chunkCount: Int, role: RAGDocumentRole) {
         if let index = documents.firstIndex(where: { $0.sourcePath == url.path }) {
             documents[index].chunkCount = chunkCount
             documents[index].importedAt = Date()
+            documents[index].role = role
         } else {
             documents.append(
                 RAGDocument(
@@ -172,7 +213,8 @@ final class RAGManager: ObservableObject {
                     sourcePath: url.path,
                     sourceName: url.lastPathComponent,
                     chunkCount: chunkCount,
-                    importedAt: Date()
+                    importedAt: Date(),
+                    role: role
                 )
             )
         }

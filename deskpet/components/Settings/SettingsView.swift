@@ -2189,11 +2189,17 @@ struct RAGSettings: View {
     @Default(.petRAGChunkSize) var chunkSize
     @Default(.petRAGChunkOverlap) var chunkOverlap
     @Default(.petRAGTopK) var topK
+    @State private var importRole: RAGDocumentRole = .retrieval
 
     var body: some View {
         Form {
             Section {
-                TextField("Embedding model", text: $embeddingModel, prompt: Text("text-embedding-3-small"))
+                TextField("Embedding model", text: $embeddingModel, prompt: Text("embeddinggemma"))
+                Picker("Import mode", selection: $importRole) {
+                    ForEach(RAGDocumentRole.allCases) { role in
+                        Text(role.displayName).tag(role)
+                    }
+                }
                 HStack {
                     Text("Retrieved chunks (top-K)")
                     Spacer()
@@ -2225,7 +2231,7 @@ struct RAGSettings: View {
             } header: {
                 Text("Embedding & Chunking")
             } footer: {
-                Text("向量与对话共用 Chat 页的 Base URL / API Key。Embedding 模型需与你使用的服务匹配（OpenAI 用 text-embedding-3-small，Ollama 用 nomic-embed-text 等）。")
+                Text("固定注入类每次对话都会加入 system context，适合人格/说话规则；按需检索类只在问题相关时注入。两类都使用当前 Embedding 模型生成向量。Ollama 默认使用 embeddinggemma，先运行 ollama pull embeddinggemma。")
             }
 
             Section {
@@ -2266,7 +2272,7 @@ struct RAGSettings: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(document.sourceName)
                                         .font(.system(size: 12, weight: .medium))
-                                    Text("\(document.chunkCount) chunks · \(document.importedAt.formatted(date: .abbreviated, time: .shortened))")
+                                    Text("\(document.role.displayName) · \(document.chunkCount) chunks · \(document.importedAt.formatted(date: .abbreviated, time: .shortened))")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -2298,7 +2304,7 @@ struct RAGSettings: View {
                     }
                 }
             } footer: {
-                Text("工作流：导入文件 → 按分块大小切割 → 用 Embedding 模型生成向量 → 写入本地向量库。之后在对话里问相关问题，宠物会自动引用这些资料回答。")
+                Text("工作流：选择固定注入或按需检索 → 分块 → 生成向量 → 写入本地向量库。固定设定每次注入，知识文档按问题检索。")
             }
         }
         .accentColor(.effectiveAccent)
@@ -2314,7 +2320,7 @@ struct RAGSettings: View {
         panel.allowsOtherFileTypes = true
         if panel.runModal() == .OK {
             Task {
-                await rag.importFiles(urls: panel.urls)
+                await rag.importFiles(urls: panel.urls, role: importRole)
             }
         }
     }

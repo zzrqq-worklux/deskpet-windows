@@ -294,8 +294,8 @@ extension Defaults.Keys {
     static let petChatHistory = Key<[ChatMessage]>("petChatHistory", default: [])
 
     // MARK: Pet RAG (Retrieval Augmented Generation)
-    /// Embedding 模型名（OpenAI 兼容 /embeddings 接口）
-    static let petRAGEmbeddingModel = Key<String>("petRAGEmbeddingModel", default: "text-embedding-3-small")
+    /// Embedding 模型名（OpenAI 兼容 /embeddings 接口）；本地 Ollama 默认使用 embeddinggemma
+    static let petRAGEmbeddingModel = Key<String>("petRAGEmbeddingModel", default: "embeddinggemma")
     /// 分块大小（字符数）
     static let petRAGChunkSize = Key<Int>("petRAGChunkSize", default: 500)
     /// 相邻分块重叠字符数

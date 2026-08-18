@@ -62,6 +62,22 @@ final class VectorStoreManager: ObservableObject {
         try await localStore.clear()
     }
 
+    /// 返回固定注入类文档，按字符数截断，避免长期人格资料撑爆上下文。
+    func fixedContext(maxCharacters: Int = 8000) -> String? {
+        var remaining = maxCharacters
+        var parts: [String] = []
+        for chunk in localStore.chunks where chunk.metadata["role"] == RAGDocumentRole.fixed.rawValue {
+            let text = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            if text.count > remaining { break }
+            parts.append(text)
+            remaining -= text.count
+        }
+        guard !parts.isEmpty else { return nil }
+        return "以下是必须遵守的桌宠固定设定与说话规则。它们不是问题答案，但每次回复都应遵守：\n"
+            + parts.joined(separator: "\n\n")
+    }
+
     /// 预留：把检索结果格式化成可注入 system 上下文的参考文本。
     func contextPrompt(from results: [VectorSearchResult], maxCharacters: Int = 2000) -> String? {
         guard !results.isEmpty else { return nil }
