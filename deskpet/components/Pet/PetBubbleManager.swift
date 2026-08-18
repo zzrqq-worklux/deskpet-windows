@@ -168,8 +168,22 @@ final class PetBubbleManager: ObservableObject {
             contentHeight = estimated
         }
 
-        let height = max(width * minHeightRatio, contentHeight ?? 0)
+        let requestedHeight = max(width * minHeightRatio, contentHeight ?? 0)
+        // 气泡不能无限向屏幕外增长；超出的文字由视图内部 ScrollView 承载。
+        let height = min(requestedHeight, maxBubbleHeight)
         return CGSize(width: width, height: height)
+    }
+
+    private var maxBubbleHeight: CGFloat {
+        guard let petOrigin = PetWindowController.shared.currentOrigin ?? PetManager.shared.windowPosition,
+              let screen = NSScreen.screens.first(where: { $0.frame.contains(petOrigin) }) ?? NSScreen.main
+        else { return 320 }
+
+        let visible = screen.visibleFrame
+        let petHeight = PetManager.shared.windowSize.height
+        let above = visible.maxY - (petOrigin.y + petHeight) - 8
+        let below = petOrigin.y - visible.minY - 8
+        return max(120, max(above, below))
     }
 
     /// 估算一段文字在给定宽度/字号/最大行数下的高度（pt）
@@ -441,6 +455,12 @@ final class PetBubbleManager: ObservableObject {
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(petOrigin) }) ?? NSScreen.main {
             let visible = screen.visibleFrame
             origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - 4 - window.frame.width)
+            let above = visible.maxY - (petOrigin.y + petSize.height) - 8
+            let below = petOrigin.y - visible.minY - 8
+            if window.frame.height > above, below >= above {
+                // 宠物上方空间不足时放到宠物下方，仍保持完整窗口在屏幕内。
+                origin.y = petOrigin.y - window.frame.height - 4
+            }
             origin.y = min(max(origin.y, visible.minY + 4), visible.maxY - 4 - window.frame.height)
         }
         window.setFrameOrigin(origin)

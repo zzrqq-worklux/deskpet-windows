@@ -83,6 +83,22 @@ struct DefaultPetBubbleView: View {
     /// 气泡内容（文字 + 输入框/按钮），皮肤只负责背景
     private var contentArea: some View {
         VStack(alignment: .leading, spacing: 6) {
+            ScrollView(.vertical, showsIndicators: true) {
+                messageArea
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // 固定在底部，不参与消息滚动，永远可见。
+            if bubble.isInputActive {
+                inputBar
+            } else if bubble.current != nil {
+                actionRow
+            }
+        }
+    }
+
+    private var messageArea: some View {
+        VStack(alignment: .leading, spacing: 6) {
             if let current = bubble.current {
                 if let userText = current.userText, !userText.isEmpty {
                     Text(userText)
@@ -122,13 +138,6 @@ struct DefaultPetBubbleView: View {
                     .foregroundStyle(secondaryText)
             }
 
-            Spacer(minLength: 0)
-
-            if bubble.isInputActive {
-                inputBar
-            } else if bubble.current != nil {
-                actionRow
-            }
         }
     }
 
@@ -220,9 +229,10 @@ struct BubbleSkinImage: View {
 
     var body: some View {
         Image(nsImage: image)
-            .resizable()
+            // 动态高度由对话内容决定，必须铺满整个气泡窗口；
+            // 使用 stretch 避免图片底边与文字区域之间出现矩形边界。
+            .resizable(resizingMode: .stretch)
             .interpolation(.high)
-            .aspectRatio(contentMode: .fit)
             .frame(width: size.width, height: size.height)
     }
 }
