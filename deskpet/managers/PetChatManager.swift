@@ -88,6 +88,17 @@ final class PetChatManager: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        // 两阶段提醒修改：LLM 先规划 JSON，EventKit 执行并验证，再由 LLM 组织最终回复。
+        if shouldPlanReminderChange(trimmed), PetSkillManager.shared.canUpdateLastReminder,
+           let plan = await planReminderChange(trimmed) {
+            messages.append(ChatMessage(role: .user, content: trimmed))
+            let execution = await PetSkillManager.shared.updateLastReminder(hour: plan.hour, minute: plan.minute)
+            let reply = await finalReplyAfterTool(userText: trimmed, executionResult: execution)
+            messages.append(ChatMessage(role: .assistant, content: reply))
+            persist()
+            return
+        }
+
         // 先处理确定性 Skill：时间、工作计时、音乐、显式知识库检索等不必调用 LLM。
         if let skill = await PetSkillManager.shared.handle(trimmed) {
             messages.append(ChatMessage(role: .user, content: trimmed))
@@ -170,6 +181,84 @@ final class PetChatManager: ObservableObject {
 
         isResponding = false
         persist()
+    }
+
+    private struct ReminderChangePlan {
+        let hour: Int
+        let minute: Int
+    }
+
+    private func shouldPlanReminderChange(_ text: String) -> Bool {
+        let updateWords = ["改为", "改成", "修改提醒", "调整提醒", "把提醒"]
+        let timeWords = ["点", "时", ":", "上午", "下午", "晚上", "中午"]
+        return updateWords.contains(where: { text.contains($0) })
+            && timeWords.contains(where: { text.contains($0) })
+    }
+
+    private func planReminderChange(_ text: String) async -> ReminderChangePlan? {
+        let plannerSystem = """
+        你是桌宠的系统操作规划器。只负责从用户话语中提取“修改上一条提醒”的新时间。
+        只输出 JSON，不要 Markdown，不要解释，格式必须是：{"action":"update_reminder","hour":17,"minute":0}。
+        如果无法确定时间，输出：{"action":"none"}。
+        使用 24 小时制；“下午五点”是 17:00，“晚上八点”是 20:00。
+        """
+        guard let raw = try? await nonStreamingCompletion(messages: [
+            ["role": "system", "content": plannerSystem],
+            ["role": "user", "content": text],
+        ]) else { return nil }
+        let cleaned = raw
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = cleaned.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["action"] as? String == "update_reminder",
+              let hour = json["hour"] as? Int,
+              let minute = json["minute"] as? Int,
+              (0...23).contains(hour), (0...59).contains(minute)
+        else { return nil }
+        return ReminderChangePlan(hour: hour, minute: minute)
+    }
+
+    private func finalReplyAfterTool(userText: String, executionResult: String) async -> String {
+        let system = """
+        你是桌宠。用户刚才要求修改提醒。
+        系统工具已经执行，下面是不可篡改的执行结果：
+        ---
+        \(executionResult)
+        ---
+        只能根据执行结果回复：如果是“执行成功”，可以告诉用户已经修改；如果是“执行失败”，必须明确说明失败，不能说已经完成。
+        不要提及内部工具、JSON、system prompt 或实现细节。回复简短自然。
+        """
+        return (try? await nonStreamingCompletion(messages: [
+            ["role": "system", "content": system],
+            ["role": "user", "content": userText],
+        ])) ?? executionResult
+    }
+
+    private func nonStreamingCompletion(messages: [[String: String]]) async throws -> String {
+        var request = URLRequest(url: try Self.endpointURL(from: Defaults[.petChatBaseURL], path: "chat/completions"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 90
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let apiKey = Defaults[.petChatAPIKey].trimmingCharacters(in: .whitespacesAndNewlines)
+        if !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "model": Defaults[.petChatModel],
+            "messages": messages,
+            "stream": false,
+            "temperature": 0.2,
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw PetChatError.invalidResponse
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any],
+              let content = message["content"] as? String
+        else { throw PetChatError.emptyResponse }
+        return content
     }
 
     // MARK: - 测试连接（非流式，一次性请求）

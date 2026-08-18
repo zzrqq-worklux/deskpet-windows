@@ -22,6 +22,24 @@ final class PetSkillManager {
     private var lastReminderIdentifier: String?
     private var lastReminderDate: Date?
 
+    var canUpdateLastReminder: Bool {
+        lastReminderIdentifier != nil && lastReminderDate != nil
+    }
+
+    func updateLastReminder(hour: Int, minute: Int) async -> String {
+        guard let identifier = lastReminderIdentifier, let oldDate = lastReminderDate else {
+            return "执行失败：当前会话没有可修改的上一条提醒。"
+        }
+        let date = Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: oldDate) ?? oldDate
+        do {
+            try await CalendarManager.shared.updateReminder(identifier: identifier, dueDate: date)
+            lastReminderDate = date
+            return "执行成功：提醒时间已修改为 \(formattedDate(date))。"
+        } catch {
+            return "执行失败：\(error.localizedDescription)"
+        }
+    }
+
     private init() {}
 
     /// 返回 nil 表示不是 Skill 指令，应继续交给 LLM。
@@ -75,7 +93,7 @@ final class PetSkillManager {
     private func isCalendarWriteCommand(_ text: String) -> Bool {
         let writeWords = ["创建日历", "添加到日历", "写入日历", "新建日程", "创建提醒", "添加提醒", "设置提醒", "安排日程", "提醒我", "记住"]
         let hasDate = text.range(of: #"\d{1,4}\s*(?:年|[./-])?\s*\d{1,2}\s*(?:月|[./-])\s*\d{1,2}\s*[日号]?|\d{1,2}\s*[./-]\s*\d{1,2}"#, options: .regularExpression) != nil
-        let hasRelativeDate = ["今天", "明天", "后天", "这周", "本周", "下周", "周一", "周二", "周三", "周四", "周五", "周六", "周日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        let hasRelativeDate = ["今天", "明天", "后天", "本月", "下月", "这个月", "下个月", "这周", "本周", "下周", "周一", "周二", "周三", "周四", "周五", "周六", "周日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
             .contains(where: { text.contains($0) })
         let hasWriteVerb = writeWords.contains(where: { text.contains($0) }) || text.contains("安排")
         return hasWriteVerb && (hasDate || hasRelativeDate)
@@ -105,7 +123,7 @@ final class PetSkillManager {
 
     private func calendarWriteReply(_ text: String) async -> PetSkillResult {
         guard let start = dateFromText(text) else {
-            return PetSkillResult(skillName: "calendar", reply: "请告诉我具体日期，例如：11月4日提醒我毕业；或者安排 2026年11月8日 14点 的项目会议。")
+            return PetSkillResult(skillName: "calendar", reply: "请告诉我具体日期，例如：下个月1号提醒我回广州，或安排 2026年11月8日 14点 的项目会议。")
         }
         let title = extractedEventTitle(from: text) ?? "桌宠提醒"
         if text.contains("提醒") || text.contains("记住") {
@@ -113,7 +131,8 @@ final class PetSkillManager {
                 let identifier = try await CalendarManager.shared.createReminder(title: title, dueDate: start)
                 lastReminderIdentifier = identifier
                 lastReminderDate = start
-                return PetSkillResult(skillName: "reminder", reply: "已经写入提醒事项：\(title)，\(formattedDate(start))。")
+                let timeNote = Calendar.current.component(.hour, from: start) == 9 ? "（未指定时间，默认上午9点）" : ""
+                return PetSkillResult(skillName: "reminder", reply: "已经写入提醒事项：\(title)，\(formattedDate(start))\(timeNote)。")
             } catch {
                 return PetSkillResult(skillName: "reminder", reply: "写入提醒事项失败：\(error.localizedDescription)。请检查系统提醒事项权限。")
             }
@@ -173,7 +192,18 @@ final class PetSkillManager {
         else { relativeDays = nil }
 
         var date: Date
-        if let relativeDays {
+        if text.contains("下个月") || text.contains("下月") {
+            let numbers = normalizedText.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+            let day = numbers.last ?? 1
+            let nextMonth = calendar.date(byAdding: .month, value: 1, to: calendar.startOfDay(for: now)) ?? now
+            let components = calendar.dateComponents([.year, .month], from: nextMonth)
+            date = calendar.date(from: DateComponents(year: components.year, month: components.month, day: day, hour: 9, minute: 0)) ?? nextMonth
+        } else if text.contains("本月") || text.contains("这个月") {
+            let numbers = normalizedText.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+            let day = numbers.last ?? 1
+            let components = calendar.dateComponents([.year, .month], from: now)
+            date = calendar.date(from: DateComponents(year: components.year, month: components.month, day: day, hour: 9, minute: 0)) ?? now
+        } else if let relativeDays {
             date = calendar.date(byAdding: .day, value: relativeDays, to: calendar.startOfDay(for: now)) ?? now
         } else if let weekday = weekdayInText(normalizedText) {
             let today = calendar.component(.weekday, from: now)
