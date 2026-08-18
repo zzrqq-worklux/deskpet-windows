@@ -691,6 +691,17 @@ class MusicManager: ObservableObject {
             }
         }
     }
+
+    /// Skill 查询当前歌曲专用：等待活动媒体控制器完成一次元数据刷新，
+    /// 避免 UI 已经更新但对话 Skill 仍读到旧缓存。
+    @MainActor
+    func refreshCurrentTrack() async -> (title: String, artist: String, isPlaying: Bool)? {
+        guard let controller = activeController else { return nil }
+        await controller.updatePlaybackInfo()
+        try? await Task.sleep(for: .milliseconds(150))
+        guard !songTitle.isEmpty, songTitle != "I'm Handsome" else { return nil }
+        return (songTitle, artistName, isPlaying)
+    }
     
     
     func syncVolumeFromActiveApp() async {

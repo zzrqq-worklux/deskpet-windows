@@ -85,6 +85,8 @@ final class PetBubbleManager: ObservableObject {
 
     /// 气泡尺寸档位（自动说话=small，用户对话=normal）
     private(set) var activeSize: PetBubbleSize = .small
+    /// 用户主动聊天期间禁止自动台词覆盖当前对话。
+    private var isChatSessionActive = false
 
     /// 由气泡视图实测上报的内容高度（pt）；nil = 尚未测量（用估算兜底）
     private var measuredContentHeight: CGFloat?
@@ -261,6 +263,7 @@ final class PetBubbleManager: ObservableObject {
     func openInput() {
         isInputActive = true
         activeSize = .normal
+        isChatSessionActive = true
         hideTask?.cancel()
         let configured = PetChatManager.shared.isConfigured
         current = PetBubble(
@@ -275,6 +278,7 @@ final class PetBubbleManager: ObservableObject {
 
     func closeInput() {
         isInputActive = false
+        isChatSessionActive = false
         if current != nil {
             scheduleHide(after: 8)
         }
@@ -284,6 +288,7 @@ final class PetBubbleManager: ObservableObject {
         hideTask?.cancel()
         current = nil
         isInputActive = false
+        isChatSessionActive = false
         hideWindow()
     }
 
@@ -292,6 +297,7 @@ final class PetBubbleManager: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         activeSize = .normal
+        isChatSessionActive = true
         guard PetChatManager.shared.isConfigured else {
             // 退出输入态：显示提示 + 关闭按钮，8 秒后自动消失
             isInputActive = false
@@ -318,6 +324,15 @@ final class PetBubbleManager: ObservableObject {
         Task { await PetChatManager.shared.send(trimmed) }
     }
 
+    /// 工作 Skill 的主动提醒：聊天进行中不覆盖当前对话。
+    func showProactiveMessage(_ text: String) {
+        guard !isChatSessionActive, !isInputActive else { return }
+        activeSize = .small
+        current = PetBubble(id: UUID(), userText: nil, petText: text, isStreaming: false, expiresAt: Date().addingTimeInterval(10))
+        showWindow()
+        scheduleHide(after: 10)
+    }
+
     // MARK: - 定时说话
 
     private func startSpeechTimer() {
@@ -331,7 +346,7 @@ final class PetBubbleManager: ObservableObject {
 
     private func speechTick() {
         // 正在输入 / 正在聊天时不自动说话
-        guard !isInputActive, current?.isStreaming != true, current?.expiresAt == nil else { return }
+        guard !isChatSessionActive, !isInputActive, current?.isStreaming != true, current?.expiresAt == nil else { return }
         guard PetManager.shared.lifeState == .roaming else { return }
 
         let now = Date()
@@ -366,7 +381,7 @@ final class PetBubbleManager: ObservableObject {
     /// 宠物切换到某个"动作"时说话（带冷却，避免连续动作刷屏）
     private func actionChanged(_ action: PetAction) {
         guard speakableActions.contains(action) else { return }
-        guard PetManager.shared.lifeState == .roaming, !isInputActive, current?.isStreaming != true else { return }
+        guard !isChatSessionActive, PetManager.shared.lifeState == .roaming, !isInputActive, current?.isStreaming != true else { return }
         let now = Date()
         guard now.timeIntervalSince(lastActionSpeechAt) >= actionSpeechCooldown else { return }
         lastActionSpeechAt = now
@@ -382,6 +397,7 @@ final class PetBubbleManager: ObservableObject {
         guard let user = messages.dropLast().last(where: { $0.role == .user }) else { return }
 
         // 对话回复：用 normal 档
+        isChatSessionActive = true
         activeSize = .normal
 
         // 用 assistant 消息 id 作为气泡 id → 流式期间 id 稳定，不闪烁
@@ -473,6 +489,7 @@ final class PetBubbleManager: ObservableObject {
             guard let self, !Task.isCancelled else { return }
             if self.isInputActive { return }
             self.current = nil
+            self.isChatSessionActive = false
             self.hideWindow()
         }
     }

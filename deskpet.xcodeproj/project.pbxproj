@@ -159,6 +159,7 @@
 		A1C0FFEE0000000000000013 /* VectorStoreProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE0000000000000001 /* VectorStoreProviding.swift */; };
 		A1C0FFEE0000000000000016 /* LocalVectorStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE0000000000000006 /* LocalVectorStore.swift */; };
 		A1C0FFEE0000000000000017 /* RAGManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE0000000000000007 /* RAGManager.swift */; };
+		A1C0FFEE000000000000001F /* PetSkillManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE000000000000000F /* PetSkillManager.swift */; };
 		A1C0FFEE000000000000001A /* PetBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE000000000000000A /* PetBubbleView.swift */; };
 		A1C0FFEE000000000000001B /* PetBubbleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE000000000000000B /* PetBubbleManager.swift */; };
 /* End PBXBuildFile section */
@@ -343,6 +344,7 @@
 		A1C0FFEE0000000000000003 /* PetChatManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PetChatManager.swift; sourceTree = "<group>"; };
 		A1C0FFEE0000000000000006 /* LocalVectorStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalVectorStore.swift; sourceTree = "<group>"; };
 		A1C0FFEE0000000000000007 /* RAGManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RAGManager.swift; sourceTree = "<group>"; };
+		A1C0FFEE000000000000000F /* PetSkillManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PetSkillManager.swift; sourceTree = "<group>"; };
 		A1C0FFEE000000000000000A /* PetBubbleView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PetBubbleView.swift; sourceTree = "<group>"; };
 		A1C0FFEE000000000000000B /* PetBubbleManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PetBubbleManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -584,6 +586,7 @@
 				A1C0FFEE0000000000000003 /* PetChatManager.swift */,
 				A1C0FFEE0000000000000002 /* VectorStoreManager.swift */,
 				A1C0FFEE0000000000000007 /* RAGManager.swift */,
+				A1C0FFEE000000000000000F /* PetSkillManager.swift */,
 			);
 			path = managers;
 			sourceTree = "<group>";
@@ -1132,6 +1135,7 @@
 			A1C0FFEE0000000000000013 /* VectorStoreProviding.swift in Sources */,
 			A1C0FFEE0000000000000016 /* LocalVectorStore.swift in Sources */,
 			A1C0FFEE0000000000000017 /* RAGManager.swift in Sources */,
+			A1C0FFEE000000000000001F /* PetSkillManager.swift in Sources */,
 			A1C0FFEE000000000000001A /* PetBubbleView.swift in Sources */,
 			A1C0FFEE000000000000001B /* PetBubbleManager.swift in Sources */,
 				2322E1609025DF07B29169A9 /* Logger.swift in Sources */,

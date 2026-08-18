@@ -183,6 +183,32 @@ class CalendarManager: ObservableObject {
         await updateEvents()
     }
 
+    func events(from start: Date, to end: Date) async -> [EventModel] {
+        await calendarService.events(from: start, to: end, calendars: selectedCalendars.map { $0.id })
+    }
+
+    func createEvent(title: String, start: Date, end: Date) async throws {
+        try await calendarService.createEvent(title: title, start: start, end: end)
+        await reloadCalendarAndReminderLists()
+    }
+
+    func createReminder(title: String, dueDate: Date) async throws -> String {
+        let identifier = try await calendarService.createReminder(title: title, dueDate: dueDate)
+        await reloadCalendarAndReminderLists()
+        return identifier
+    }
+
+    func updateReminder(identifier: String, dueDate: Date) async throws {
+        try await calendarService.updateReminder(identifier: identifier, dueDate: dueDate)
+        await reloadCalendarAndReminderLists()
+    }
+
+    func replaceReminder(identifier: String, dueDate: Date) async throws -> String {
+        let newIdentifier = try await calendarService.replaceReminder(identifier: identifier, dueDate: dueDate)
+        await reloadCalendarAndReminderLists()
+        return newIdentifier
+    }
+
     private func updateEvents() async {
         let calendarIDs = selectedCalendars.map { $0.id }
         let eventsResult = await calendarService.events(

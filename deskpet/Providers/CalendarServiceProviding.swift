@@ -14,6 +14,10 @@ protocol CalendarServiceProviding {
     func requestAccess(to type: EKEntityType) async throws -> Bool
     func calendars() async -> [CalendarModel]
     func events(from start: Date, to end: Date, calendars: [String]) async -> [EventModel]
+    func createEvent(title: String, start: Date, end: Date) async throws
+    func createReminder(title: String, dueDate: Date) async throws -> String
+    func updateReminder(identifier: String, dueDate: Date) async throws
+    func replaceReminder(identifier: String, dueDate: Date) async throws -> String
 }
 
 class CalendarService: CalendarServiceProviding {
@@ -79,6 +83,63 @@ class CalendarService: CalendarServiceProviding {
         }
         
         return events.sorted { $0.start < $1.start }
+    }
+
+    @MainActor
+    func createEvent(title: String, start: Date, end: Date) async throws {
+        guard hasAccess(to: .event) else {
+            throw NSError(domain: "DeskPet.Calendar", code: 1, userInfo: [NSLocalizedDescriptionKey: "没有日历写入权限"])
+        }
+        guard let calendar = store.defaultCalendarForNewEvents else {
+            throw NSError(domain: "DeskPet.Calendar", code: 2, userInfo: [NSLocalizedDescriptionKey: "没有可用的默认日历"])
+        }
+        let event = EKEvent(eventStore: store)
+        event.title = title
+        event.startDate = start
+        event.endDate = end
+        event.calendar = calendar
+        try store.save(event, span: .thisEvent, commit: true)
+    }
+
+    @MainActor
+    func createReminder(title: String, dueDate: Date) async throws -> String {
+        guard hasAccess(to: .reminder) else {
+            throw NSError(domain: "DeskPet.Calendar", code: 3, userInfo: [NSLocalizedDescriptionKey: "没有提醒事项写入权限"])
+        }
+        guard let calendar = store.defaultCalendarForNewReminders() else {
+            throw NSError(domain: "DeskPet.Calendar", code: 4, userInfo: [NSLocalizedDescriptionKey: "没有可用的默认提醒事项列表"])
+        }
+        let reminder = EKReminder(eventStore: store)
+        reminder.title = title
+        reminder.calendar = calendar
+        reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
+        try store.save(reminder, commit: true)
+        return reminder.calendarItemIdentifier
+    }
+
+    @MainActor
+    func updateReminder(identifier: String, dueDate: Date) async throws {
+        guard hasAccess(to: .reminder) else {
+            throw NSError(domain: "DeskPet.Calendar", code: 5, userInfo: [NSLocalizedDescriptionKey: "没有提醒事项写入权限"])
+        }
+        guard let reminder = store.calendarItem(withIdentifier: identifier) as? EKReminder else {
+            throw NSError(domain: "DeskPet.Calendar", code: 6, userInfo: [NSLocalizedDescriptionKey: "找不到上一条提醒事项"])
+        }
+        reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
+        try store.save(reminder, commit: true)
+    }
+
+    @MainActor
+    func replaceReminder(identifier: String, dueDate: Date) async throws -> String {
+        guard hasAccess(to: .reminder) else {
+            throw NSError(domain: "DeskPet.Calendar", code: 7, userInfo: [NSLocalizedDescriptionKey: "没有提醒事项写入权限"])
+        }
+        guard let oldReminder = store.calendarItem(withIdentifier: identifier) as? EKReminder else {
+            throw NSError(domain: "DeskPet.Calendar", code: 8, userInfo: [NSLocalizedDescriptionKey: "找不到要替换的提醒事项"])
+        }
+        let title = oldReminder.title ?? "桌宠提醒"
+        try store.remove(oldReminder, commit: true)
+        return try await createReminder(title: title, dueDate: dueDate)
     }
     
     private func fetchReminders(from start: Date, to end: Date, calendars: [EKCalendar]) async -> [EventModel] {
