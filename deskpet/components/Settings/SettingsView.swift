@@ -2190,16 +2190,12 @@ struct RAGSettings: View {
     @Default(.petRAGChunkOverlap) var chunkOverlap
     @Default(.petRAGTopK) var topK
     @State private var importRole: RAGDocumentRole = .retrieval
+    @State private var pendingURLs: [URL] = []
 
     var body: some View {
         Form {
             Section {
                 TextField("Embedding model", text: $embeddingModel, prompt: Text("embeddinggemma"))
-                Picker("Import mode", selection: $importRole) {
-                    ForEach(RAGDocumentRole.allCases) { role in
-                        Text(role.displayName).tag(role)
-                    }
-                }
                 HStack {
                     Text("Retrieved chunks (top-K)")
                     Spacer()
@@ -2231,20 +2227,74 @@ struct RAGSettings: View {
             } header: {
                 Text("Embedding & Chunking")
             } footer: {
-                Text("固定注入类每次对话都会加入 system context，适合人格/说话规则；按需检索类只在问题相关时注入。两类都使用当前 Embedding 模型生成向量。Ollama 默认使用 embeddinggemma，先运行 ollama pull embeddinggemma。")
+                Text("按需检索类使用当前 Embedding 模型生成向量；固定注入类只保存文本，不需要向量。Ollama 默认使用 embeddinggemma，先运行 ollama pull embeddinggemma。")
+            }
+
+            Section {
+                Picker("导入用途", selection: $importRole) {
+                    ForEach(RAGDocumentRole.allCases) { role in
+                        VStack(alignment: .leading) {
+                            Text(role.displayName)
+                            Text(role == .fixed ? "每次对话固定注入，不生成向量" : "生成向量，按问题相似度检索")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .tag(role)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                Text("文档用途")
+            } footer: {
+                Text("导入前选择用途。人格、角色、说话规则建议使用“固定注入”；技术资料、说明文档建议使用“按需检索”。")
             }
 
             Section {
                 Button {
-                    importDocuments()
+                    selectDocuments()
                 } label: {
-                    Label("Import documents…", systemImage: "plus.circle")
+                    Label("选择文件…", systemImage: "plus.circle")
                 }
                 .disabled(rag.isImporting)
+
+                if !pendingURLs.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("待导入文件（\(pendingURLs.count) 个）")
+                            .font(.subheadline.weight(.medium))
+                        ForEach(pendingURLs, id: \.path) { url in
+                            Label(url.lastPathComponent, systemImage: "doc.text")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Button("开始导入") {
+                                let urls = pendingURLs
+                                pendingURLs = []
+                                Task { await rag.importFiles(urls: urls, role: importRole) }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(rag.isImporting)
+
+                            Button("取消") {
+                                pendingURLs = []
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        Text(importRole == .fixed
+                             ? "当前分类：固定注入。不会生成 embedding，导入后每次对话直接注入。"
+                             : "当前分类：按需检索。导入后将使用 embeddinggemma 生成向量。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
 
                 if rag.isImporting {
                     VStack(alignment: .leading, spacing: 4) {
                         ProgressView(value: rag.importProgress)
+                        Text(importRole == .fixed ? "正在添加固定注入内容…" : "正在生成 embedding…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         if let status = rag.importStatus {
                             Text(status)
                                 .font(.caption)
@@ -2272,7 +2322,7 @@ struct RAGSettings: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(document.sourceName)
                                         .font(.system(size: 12, weight: .medium))
-                                    Text("\(document.role.displayName) · \(document.chunkCount) chunks · \(document.importedAt.formatted(date: .abbreviated, time: .shortened))")
+                                    Text("\(document.role.displayName) · \(document.isEmbedded ? "已完成 embedding" : "无需 embedding") · \(document.chunkCount) chunks")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -2311,7 +2361,7 @@ struct RAGSettings: View {
         .navigationTitle("RAG")
     }
 
-    private func importDocuments() {
+    private func selectDocuments() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
@@ -2319,9 +2369,7 @@ struct RAGSettings: View {
         panel.prompt = "导入"
         panel.allowsOtherFileTypes = true
         if panel.runModal() == .OK {
-            Task {
-                await rag.importFiles(urls: panel.urls, role: importRole)
-            }
+            pendingURLs = panel.urls
         }
     }
 }

@@ -34,7 +34,8 @@ if [[ -z "$XCODE_PATH" || "$XCODE_PATH" == *CommandLineTools* ]]; then
   exit 1
 fi
 echo "✅ Xcode: $XCODE_PATH"
-xcodebuild -version 2>/dev/null | head -1
+XCODE_VERSION="$(xcodebuild -version 2>/dev/null)"
+printf '%s\n' "${XCODE_VERSION%%$'\n'*}"
 
 # ---- 2. 构建（ad-hoc 签名 "-"）----
 echo "==> 构建 $SCHEME ($CONFIG)…"

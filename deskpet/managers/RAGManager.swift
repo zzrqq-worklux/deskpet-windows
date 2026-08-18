@@ -32,18 +32,20 @@ struct RAGDocument: Identifiable, Codable, Equatable, Defaults.Serializable {
     var chunkCount: Int
     var importedAt: Date
     var role: RAGDocumentRole
+    var isEmbedded: Bool
 
-    init(id: UUID, sourcePath: String, sourceName: String, chunkCount: Int, importedAt: Date, role: RAGDocumentRole = .retrieval) {
+    init(id: UUID, sourcePath: String, sourceName: String, chunkCount: Int, importedAt: Date, role: RAGDocumentRole = .retrieval, isEmbedded: Bool = true) {
         self.id = id
         self.sourcePath = sourcePath
         self.sourceName = sourceName
         self.chunkCount = chunkCount
         self.importedAt = importedAt
         self.role = role
+        self.isEmbedded = isEmbedded
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, sourcePath, sourceName, chunkCount, importedAt, role
+        case id, sourcePath, sourceName, chunkCount, importedAt, role, isEmbedded
     }
 
     init(from decoder: Decoder) throws {
@@ -54,6 +56,7 @@ struct RAGDocument: Identifiable, Codable, Equatable, Defaults.Serializable {
         chunkCount = try container.decode(Int.self, forKey: .chunkCount)
         importedAt = try container.decode(Date.self, forKey: .importedAt)
         role = try container.decodeIfPresent(RAGDocumentRole.self, forKey: .role) ?? .retrieval
+        isEmbedded = try container.decodeIfPresent(Bool.self, forKey: .isEmbedded) ?? (role == .retrieval)
     }
 }
 
@@ -141,7 +144,13 @@ final class RAGManager: ObservableObject {
 
                 var documents: [VectorDocument] = []
                 for batch in item.chunks.batched(by: 16) {
-                    let embeddings = try await PetChatManager.shared.embed(batch.map(\.text))
+                    // 固定注入只需要文本，不必生成向量；检索类才调用 embedding 模型。
+                    let embeddings: [[Double]?]
+                    if item.role == .retrieval {
+                        embeddings = try await PetChatManager.shared.embed(batch.map(\.text)).map(Optional.some)
+                    } else {
+                        embeddings = Array(repeating: nil, count: batch.count)
+                    }
                     for (i, chunk) in batch.enumerated() {
                         documents.append(
                             VectorDocument(
@@ -166,7 +175,9 @@ final class RAGManager: ObservableObject {
                 updateRegistry(url: item.url, chunkCount: documents.count, role: item.role)
             }
 
-            importStatus = "导入完成，共 \(total) 个分块"
+            importStatus = role == .fixed
+                ? "已添加固定注入内容，共 \(total) 个分块（无需 embedding）"
+                : "embedding 完成，共 \(total) 个分块"
         } catch {
             lastError = error.localizedDescription
             importStatus = nil
@@ -206,6 +217,7 @@ final class RAGManager: ObservableObject {
             documents[index].chunkCount = chunkCount
             documents[index].importedAt = Date()
             documents[index].role = role
+            documents[index].isEmbedded = role == .retrieval
         } else {
             documents.append(
                 RAGDocument(
@@ -214,7 +226,8 @@ final class RAGManager: ObservableObject {
                     sourceName: url.lastPathComponent,
                     chunkCount: chunkCount,
                     importedAt: Date(),
-                    role: role
+                    role: role,
+                    isEmbedded: role == .retrieval
                 )
             )
         }
