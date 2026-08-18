@@ -658,22 +658,37 @@ final class PetSkin {
             }
         }
 
-        let defaultDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Pictures/BoringPet", isDirectory: true)
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let defaultDir = homeDir.appendingPathComponent("Pictures/BoringPet", isDirectory: true)
+        NSLog("[SkinDiag] home=%@", homeDir.path)
+        NSLog("[SkinDiag] defaultDir=%@ exists=%d", defaultDir.path, fileManager.fileExists(atPath: defaultDir.path))
         if fileManager.fileExists(atPath: defaultDir.path) {
-            return defaultDir
+            // 目录"存在"不代表可读：macOS 对 ~/Pictures 有 TCC 保护，
+            // 未授权时 contentsOfDirectory 会返回空/抛错。必须验证能真正枚举出内容，
+            // 否则回退到内置素材，避免"目录存在却扫不到帧 → 宠物消失"。
+            let entries = (try? FileManager.default.contentsOfDirectory(atPath: defaultDir.path)) ?? []
+            if !entries.isEmpty {
+                return defaultDir
+            }
+            NSLog("[SkinDiag] defaultDir exists but NOT enumerable (TCC/权限) — falling back to built-in")
         }
 
         if let builtIn = Bundle.main.url(forResource: "BoringPet", withExtension: nil) {
+            NSLog("[SkinDiag] using built-in=%@", builtIn.path)
             return builtIn
         }
 
+        NSLog("[SkinDiag] NO skin dir found")
         return nil
     }
 
     /// 加载皮肤；目录不存在或没有任何帧时返回 nil
     static func load() -> PetSkin? {
-        guard let dir = locateSkinDirectory() else { return nil }
+        guard let dir = locateSkinDirectory() else {
+            NSLog("[SkinDiag] load() failed at locate")
+            return nil
+        }
+        NSLog("[SkinDiag] load() dir=%@", dir.path)
 
         var config = PetSkinConfig()
         if let configURL = dir.appendingPathComponent("config.json") as URL?,
@@ -691,6 +706,8 @@ final class PetSkin {
         let allFolders = (try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
         ))?.filter { $0.hasDirectoryPath } ?? []
+        NSLog("[SkinDiag] allFolders=%d", allFolders.count)
+        NSLog("[SkinDiag] folderNames=%@", allFolders.map { $0.lastPathComponent }.joined(separator: ","))
 
         // 先收集变体目录（idle_0, idle_1, happy_0...）
         var variantFolders: [PetAction: [(idx: Int, url: URL)]] = [:]
@@ -731,7 +748,10 @@ final class PetSkin {
             if let s = scanSound(in: folder) { sounds[action] = s }
         }
 
-        guard !variantURLs.isEmpty else { return nil }
+        guard !variantURLs.isEmpty else {
+            NSLog("[SkinDiag] variantURLs EMPTY — load failed")
+            return nil
+        }
 
         // 2. 读取原始像素尺寸（只读属性不解码）：baseFrameSize + 降采样目标尺寸
         let scale = CGFloat(config.scale ?? 1.0)

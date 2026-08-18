@@ -1850,6 +1850,7 @@ struct PetSettings: View {
     @Default(.petRoamInterval) var petRoamInterval
     @Default(.petBubbleSize) var petBubbleSize
     @Default(.petBubbleSpeechInterval) var petBubbleSpeechInterval
+    @Default(.petBubbleSkin) var petBubbleSkin
     @State private var skinStatusText = ""
     @State private var roamSelection: RoamPreset = .normal
 
@@ -1938,6 +1939,11 @@ struct PetSettings: View {
                         Text(size.rawValue).tag(size)
                     }
                 }
+                Picker("Bubble skin", selection: $petBubbleSkin) {
+                    ForEach(PetBubbleSkin.allCases) { skin in
+                        Text(skin.rawValue).tag(skin)
+                    }
+                }
                 HStack {
                     Text("说话频率")
                     Spacer()
@@ -1958,7 +1964,7 @@ struct PetSettings: View {
             } header: {
                 Text("Speech bubble")
             } footer: {
-                Text("气泡是宠物头顶的对话/自言自语气泡。说话频率 = 待机自言的间隔；动作触发说话的冷却随它缩放。内容只显示当前对话，历史在 Chat 设置里查看。")
+                Text("气泡是宠物头顶的对话/自言自语气泡。Bubble skin 选择气泡外观（默认圆角卡片或鲸鱼气泡）；说话频率 = 待机自言的间隔；动作触发说话的冷却随它缩放。内容只显示当前对话，历史在 Chat 设置里查看。")
             }
             Section {
                 TextField("Skin folder", text: $petSkinDirectory)

@@ -58,3 +58,15 @@ build/
 # SPM 验证构建产物（tools/spm_build.sh 生成，与 Xcode 项目无关，不提交）
 /Package.swift
 /Package.resolved
+
+# RAG 知识库数据（本机生成的向量库 / 导入的原始文档 / 运行期缓存，不提交）
+# 实际数据默认在 ~/Library/Application Support/DeskPet/，本就无法入库；
+# 以下覆盖用户把资料放到项目内或自定义导出目录的情况。
+*.vectorstore.json
+vectorstore.json
+*_vectorstore.json
+.rag/
+rag-data/
+RAGData/
+*.rag
+/petRAG*

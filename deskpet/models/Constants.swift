@@ -72,9 +72,9 @@ enum PetBubbleSize: String, CaseIterable, Identifiable, Defaults.Serializable {
     /// 气泡窗口宽（pt）
     var width: CGFloat {
         switch self {
-        case .small: return 200
-        case .normal: return 240
-        case .large: return 280
+        case .small: return 160
+        case .normal: return 280
+        case .large: return 360
         }
     }
 
@@ -82,6 +82,30 @@ enum PetBubbleSize: String, CaseIterable, Identifiable, Defaults.Serializable {
     var height: CGFloat { width * 0.55 }
 
     var size: CGSize { CGSize(width: width, height: height) }
+}
+
+/// 气泡皮肤类型（内置预设）
+enum PetBubbleSkin: String, CaseIterable, Identifiable, Defaults.Serializable {
+    /// 代码绘制的默认圆角卡片
+    case `default` = "Default"
+    /// 鲸鱼气泡 - 盐（浅色）
+    case whaleSalt = "Whale Salt"
+    /// 鲸鱼气泡 - 冰（冷色）
+    case whaleIce = "Whale Ice"
+    /// 鲸鱼气泡 - 夜（深色）
+    case whaleNight = "Whale Night"
+
+    var id: String { rawValue }
+
+    /// 对应资源名（nil = 用默认代码绘制）
+    var imageName: String? {
+        switch self {
+        case .default: return nil
+        case .whaleSalt: return "BubbleSalt"
+        case .whaleIce: return "BubbleIce"
+        case .whaleNight: return "BubbleNight"
+        }
+    }
 }
 
 // Action to perform when Option (⌥) is held while pressing media keys
@@ -244,6 +268,8 @@ extension Defaults.Keys {
     static let petBubbleSize = Key<PetBubbleSize>("petBubbleSize", default: .normal)
     /// 气泡自动说话的间隔（秒），越小说得越勤；动作触发说话的冷却随之缩放
     static let petBubbleSpeechInterval = Key<Double>("petBubbleSpeechInterval", default: 120)
+    /// 气泡皮肤（默认圆角卡片 / 鲸鱼气泡位图）
+    static let petBubbleSkin = Key<PetBubbleSkin>("petBubbleSkin", default: .default)
 
     // MARK: Pet Chat (LLM)
     /// 对话总开关

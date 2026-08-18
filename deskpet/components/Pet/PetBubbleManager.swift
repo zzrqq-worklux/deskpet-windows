@@ -113,9 +113,25 @@ final class PetBubbleManager: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var bubbleSizeObservation: Defaults.Observation?
 
-    /// 当前气泡大小（由设置驱动）
+    /// 当前气泡大小（由设置驱动）。
+    /// 默认（代码绘制）皮肤：宽度不超过宠物窗口宽度。
+    /// 图片皮肤：宽度取用户设定（200~280pt），高度按图片原始比例计算，
+    /// 保证整张气泡图不变形、不裁切、文字有足够空间。
     var bubbleSize: CGSize {
-        Defaults[.petBubbleSize].size
+        let pref = Defaults[.petBubbleSize].size
+        // 图片皮肤：用完整用户设定宽度，不限制到宠物宽（横向气泡图需要空间）
+        if let imageName = Defaults[.petBubbleSkin].imageName,
+           let image = NSImage(named: imageName),
+           image.size.width > 0 {
+            let width = pref.width
+            let aspect = image.size.height / image.size.width
+            return CGSize(width: width, height: width * aspect)
+        }
+        // 默认皮肤：宽度不超过宠物宽度
+        let petWidth = PetManager.shared.windowSize.width
+        let width = min(pref.width, petWidth)
+        let height = width * (pref.height / pref.width)
+        return CGSize(width: width, height: height)
     }
 
     /// 气泡渲染器（换肤接口）：默认用当前实现，后续可替换成其他风格
