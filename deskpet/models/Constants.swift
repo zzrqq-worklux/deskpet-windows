@@ -1,0 +1,281 @@
+//
+//  Constants.swift
+//  boringNotch
+//
+//  Created by Richard Kunkli on 2024. 10. 17..
+//
+
+import SwiftUI
+import Defaults
+
+private let availableDirectories = FileManager
+    .default
+    .urls(for: .documentDirectory, in: .userDomainMask)
+let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+let bundleIdentifier = Bundle.main.bundleIdentifier ?? "com.deskpet.app"
+let appVersion = "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""))"
+
+let temporaryDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+let spacing: CGFloat = 16
+
+struct CustomVisualizer: Codable, Hashable, Equatable, Defaults.Serializable {
+    let UUID: UUID
+    var name: String
+    var url: URL
+    var speed: CGFloat = 1.0
+}
+
+enum CalendarSelectionState: Codable, Defaults.Serializable {
+    case all
+    case selected(Set<String>)
+}
+
+enum HideNotchOption: String, Defaults.Serializable {
+    case always
+    case nowPlayingOnly
+    case never
+}
+
+// Define notification names at file scope
+extension Notification.Name {
+    static let mediaControllerChanged = Notification.Name("mediaControllerChanged")
+    /// 拖宠物进入刘海展开区 → 打开刘海并切换到 Pet 页（由 PetManager 发出，AppDelegate 监听）
+    static let openNotchToPet = Notification.Name("openNotchToPet")
+}
+
+// Media controller types for selection in settings
+enum MediaControllerType: String, CaseIterable, Identifiable, Defaults.Serializable {
+    case nowPlaying = "Now Playing"
+    case appleMusic = "Apple Music"
+    case spotify = "Spotify"
+    case youtubeMusic = "YouTube Music"
+    
+    var id: String { self.rawValue }
+}
+
+// Sneak peek styles for selection in settings
+enum SneakPeekStyle: String, CaseIterable, Identifiable, Defaults.Serializable {
+    case standard = "Default"
+    case inline = "Inline"
+    
+    var id: String { self.rawValue }
+}
+
+/// 宠物头顶气泡大小档位
+enum PetBubbleSize: String, CaseIterable, Identifiable, Defaults.Serializable {
+    case small = "Small"
+    case normal = "Normal"
+    case large = "Large"
+
+    var id: String { rawValue }
+
+    /// 气泡窗口宽（pt）
+    var width: CGFloat {
+        switch self {
+        case .small: return 200
+        case .normal: return 240
+        case .large: return 280
+        }
+    }
+
+    /// 高度按比例缩放，保持布局比例
+    var height: CGFloat { width * 0.55 }
+
+    var size: CGSize { CGSize(width: width, height: height) }
+}
+
+// Action to perform when Option (⌥) is held while pressing media keys
+enum OptionKeyAction: String, CaseIterable, Identifiable, Defaults.Serializable {
+    case openSettings = "Open System Settings"
+    case showHUD = "Show HUD"
+    case none = "No Action"
+
+    var id: String { self.rawValue }
+}
+
+extension Defaults.Keys {
+    // MARK: General
+    static let menubarIcon = Key<Bool>("menubarIcon", default: true)
+    static let showOnAllDisplays = Key<Bool>("showOnAllDisplays", default: false)
+    static let automaticallySwitchDisplay = Key<Bool>("automaticallySwitchDisplay", default: true)
+    static let releaseName = Key<String>("releaseName", default: "Flying Rabbit 🐇🪽")
+    
+    // MARK: Behavior
+    static let minimumHoverDuration = Key<TimeInterval>("minimumHoverDuration", default: 0.3)
+    static let enableHaptics = Key<Bool>("enableHaptics", default: true)
+    static let openNotchOnHover = Key<Bool>("openNotchOnHover", default: true)
+    static let extendHoverArea = Key<Bool>("extendHoverArea", default: false)
+    static let notchHeightMode = Key<WindowHeightMode>(
+        "notchHeightMode",
+        default: WindowHeightMode.matchRealNotchSize
+    )
+    static let nonNotchHeightMode = Key<WindowHeightMode>(
+        "nonNotchHeightMode",
+        default: WindowHeightMode.matchMenuBar
+    )
+    static let nonNotchHeight = Key<CGFloat>("nonNotchHeight", default: 32)
+    static let notchHeight = Key<CGFloat>("notchHeight", default: 32)
+    //static let openLastTabByDefault = Key<Bool>("openLastTabByDefault", default: false)
+    static let showOnLockScreen = Key<Bool>("showOnLockScreen", default: false)
+    static let hideFromScreenRecording = Key<Bool>("hideFromScreenRecording", default: false)
+    
+    // MARK: Appearance
+    static let showEmojis = Key<Bool>("showEmojis", default: false)
+    //static let alwaysShowTabs = Key<Bool>("alwaysShowTabs", default: true)
+    static let showMirror = Key<Bool>("showMirror", default: false)
+    static let mirrorShape = Key<MirrorShapeEnum>("mirrorShape", default: MirrorShapeEnum.rectangle)
+    static let settingsIconInNotch = Key<Bool>("settingsIconInNotch", default: true)
+    static let lightingEffect = Key<Bool>("lightingEffect", default: true)
+    static let enableShadow = Key<Bool>("enableShadow", default: true)
+    static let cornerRadiusScaling = Key<Bool>("cornerRadiusScaling", default: true)
+
+    static let showNotHumanFace = Key<Bool>("showNotHumanFace", default: false)
+    static let tileShowLabels = Key<Bool>("tileShowLabels", default: false)
+    static let showCalendar = Key<Bool>("showCalendar", default: false)
+    static let hideCompletedReminders = Key<Bool>("hideCompletedReminders", default: true)
+    static let sliderColor = Key<SliderColorEnum>(
+        "sliderUseAlbumArtColor",
+        default: SliderColorEnum.white
+    )
+    static let playerColorTinting = Key<Bool>("playerColorTinting", default: true)
+    static let useMusicVisualizer = Key<Bool>("useMusicVisualizer", default: true)
+    static let customVisualizers = Key<[CustomVisualizer]>("customVisualizers", default: [])
+    static let selectedVisualizer = Key<CustomVisualizer?>("selectedVisualizer", default: nil)
+    
+    // MARK: Gestures
+    static let enableGestures = Key<Bool>("enableGestures", default: true)
+    static let closeGestureEnabled = Key<Bool>("closeGestureEnabled", default: true)
+    static let gestureSensitivity = Key<CGFloat>("gestureSensitivity", default: 200.0)
+    
+    // MARK: Media playback
+    static let coloredSpectrogram = Key<Bool>("coloredSpectrogram", default: true)
+    static let enableSneakPeek = Key<Bool>("enableSneakPeek", default: false)
+    static let sneakPeekStyles = Key<SneakPeekStyle>("sneakPeekStyles", default: .standard)
+    static let waitInterval = Key<Double>("waitInterval", default: 3)
+    static let showShuffleAndRepeat = Key<Bool>("showShuffleAndRepeat", default: false)
+    static let enableLyrics = Key<Bool>("enableLyrics", default: false)
+    static let musicControlSlots = Key<[MusicControlButton]>(
+        "musicControlSlots",
+        default: MusicControlButton.defaultLayout
+    )
+    static let musicControlSlotLimit = Key<Int>(
+        "musicControlSlotLimit",
+        default: MusicControlButton.defaultLayout.count
+    )
+    
+    // MARK: Battery
+    static let showPowerStatusNotifications = Key<Bool>("showPowerStatusNotifications", default: true)
+    static let showBatteryIndicator = Key<Bool>("showBatteryIndicator", default: true)
+    static let showBatteryPercentage = Key<Bool>("showBatteryPercentage", default: true)
+    static let showPowerStatusIcons = Key<Bool>("showPowerStatusIcons", default: true)
+    
+    // MARK: Downloads
+    static let enableDownloadListener = Key<Bool>("enableDownloadListener", default: true)
+    static let enableSafariDownloads = Key<Bool>("enableSafariDownloads", default: true)
+    static let selectedDownloadIndicatorStyle = Key<DownloadIndicatorStyle>("selectedDownloadIndicatorStyle", default: DownloadIndicatorStyle.progress)
+    static let selectedDownloadIconStyle = Key<DownloadIconStyle>("selectedDownloadIconStyle", default: DownloadIconStyle.onlyAppIcon)
+    
+    // MARK: HUD
+    static let hudReplacement = Key<Bool>("hudReplacement", default: false)
+    static let inlineHUD = Key<Bool>("inlineHUD", default: false)
+    static let enableGradient = Key<Bool>("enableGradient", default: false)
+    static let systemEventIndicatorShadow = Key<Bool>("systemEventIndicatorShadow", default: false)
+    static let systemEventIndicatorUseAccent = Key<Bool>("systemEventIndicatorUseAccent", default: false)
+    static let showOpenNotchHUD = Key<Bool>("showOpenNotchHUD", default: true)
+    static let showOpenNotchHUDPercentage = Key<Bool>("showOpenNotchHUDPercentage", default: true)
+    static let showClosedNotchHUDPercentage = Key<Bool>("showClosedNotchHUDPercentage", default: false)
+    // Option key modifier behaviour for media keys
+    static let optionKeyAction = Key<OptionKeyAction>("optionKeyAction", default: OptionKeyAction.openSettings)
+    
+    // MARK: Shelf
+    static let boringShelf = Key<Bool>("boringShelf", default: true)
+    static let openShelfByDefault = Key<Bool>("openShelfByDefault", default: true)
+    static let shelfTapToOpen = Key<Bool>("shelfTapToOpen", default: true)
+    static let quickShareProvider = Key<String>("quickShareProvider", default: QuickShareProvider.defaultProvider.id)
+    static let copyOnDrag = Key<Bool>("copyOnDrag", default: false)
+    static let autoRemoveShelfItems = Key<Bool>("autoRemoveShelfItems", default: false)
+    static let expandedDragDetection = Key<Bool>("expandedDragDetection", default: true)
+    
+    // MARK: Calendar
+    static let calendarSelectionState = Key<CalendarSelectionState>("calendarSelectionState", default: .all)
+    static let hideAllDayEvents = Key<Bool>("hideAllDayEvents", default: false)
+    static let showFullEventTitles = Key<Bool>("showFullEventTitles", default: false)
+    static let autoScrollToNextEvent = Key<Bool>("autoScrollToNextEvent", default: true)
+    
+    // MARK: Fullscreen Media Detection
+    static let hideNotchOption = Key<HideNotchOption>("hideNotchOption", default: .nowPlayingOnly)
+    
+    // MARK: Media Controller
+    static let mediaController = Key<MediaControllerType>("mediaController", default: defaultMediaController)
+    
+    // MARK: Advanced Settings
+    static let useCustomAccentColor = Key<Bool>("useCustomAccentColor", default: false)
+    static let customAccentColorData = Key<Data?>("customAccentColorData", default: nil)
+    // Show or hide the title bar
+    static let hideTitleBar = Key<Bool>("hideTitleBar", default: true)
+    
+    // Helper to determine the default media controller based on NowPlaying deprecation status
+    static var defaultMediaController: MediaControllerType {
+        if MusicManager.shared.isNowPlayingDeprecated {
+            return .appleMusic
+        } else {
+            return .nowPlaying
+        }
+    }
+
+    static let didClearLegacyURLCacheV1 = Key<Bool>("didClearLegacyURLCache_v1", default: false)
+
+    // MARK: Desktop Pet
+    // 默认值已调优为内存/CPU 最优配置：低频活动 + 慢衰减 + 低音量
+    static let petEnabled = Key<Bool>("petEnabled", default: true)
+    /// 自定义素材目录；为空时使用默认目录（~/Pictures/BoringPet）或内置素材
+    static let petSkinDirectory = Key<String>("petSkinDirectory", default: "")
+    /// 宠物显示缩放（0.75 = Small；窗口另有最小高度兜底，防止过小看不清）
+    static let petScale = Key<CGFloat>("petScale", default: 1.0)
+    /// 属性衰减速度倍率（0.5 = Slow，减少 UI 刷新开销）
+    static let petStatDecaySpeed = Key<Double>("petStatDecaySpeed", default: 0.5)
+    /// 音乐播放时跳舞
+    static let petMusicDance = Key<Bool>("petMusicDance", default: true)
+    /// 随机走动的频率（秒）：30 = Chill 档，低频活动大幅降低 CPU/内存峰值
+    static let petRoamInterval = Key<Double>("petRoamInterval", default: 30.0)
+    /// 宠物动作音效音量（0.0–1.0）：0.25 低音量，不吵且保留反馈
+    static let petSoundVolume = Key<Double>("petSoundVolume", default: 0.25)
+    /// 宠物头顶气泡大小（小/中/大）
+    static let petBubbleSize = Key<PetBubbleSize>("petBubbleSize", default: .normal)
+    /// 气泡自动说话的间隔（秒），越小说得越勤；动作触发说话的冷却随之缩放
+    static let petBubbleSpeechInterval = Key<Double>("petBubbleSpeechInterval", default: 120)
+
+    // MARK: Pet Chat (LLM)
+    /// 对话总开关
+    static let petChatEnabled = Key<Bool>("petChatEnabled", default: false)
+    /// OpenAI 兼容 API Base URL（可省略结尾的 /v1，自动补齐）
+    static let petChatBaseURL = Key<String>("petChatBaseURL", default: "https://api.openai.com/v1")
+    /// API Key（Bearer Token）
+    static let petChatAPIKey = Key<String>("petChatAPIKey", default: "")
+    /// 模型名
+    static let petChatModel = Key<String>("petChatModel", default: "gpt-4o-mini")
+    /// 宠物人设 system prompt
+    static let petChatSystemPrompt = Key<String>(
+        "petChatSystemPrompt",
+        default:
+            "你是一只住在 macOS 桌面上的可爱宠物猫，名字叫「小桌」。主人是你的好朋友。"
+            + "请用简短、温暖、俏皮的口吻像朋友一样闲聊，回复尽量控制在 2-3 句话以内，"
+            + "偶尔可以用一两个表情符号（😺🐾✨）。"
+    )
+    /// 发送给 LLM 的历史消息条数上限（裁剪会话上下文）
+    static let petChatMaxHistory = Key<Int>("petChatMaxHistory", default: 20)
+    /// 持久化的对话记录（重启不丢失，仅保留最近 N 条）
+    static let petChatHistory = Key<[ChatMessage]>("petChatHistory", default: [])
+
+    // MARK: Pet RAG (Retrieval Augmented Generation)
+    /// Embedding 模型名（OpenAI 兼容 /embeddings 接口）
+    static let petRAGEmbeddingModel = Key<String>("petRAGEmbeddingModel", default: "text-embedding-3-small")
+    /// 分块大小（字符数）
+    static let petRAGChunkSize = Key<Int>("petRAGChunkSize", default: 500)
+    /// 相邻分块重叠字符数
+    static let petRAGChunkOverlap = Key<Int>("petRAGChunkOverlap", default: 100)
+    /// 每次对话检索注入的分块数
+    static let petRAGTopK = Key<Int>("petRAGTopK", default: 3)
+    /// 已导入文档清单（供设置页展示 / 管理）
+    static let petRAGDocuments = Key<[RAGDocument]>("petRAGDocuments", default: [])
+}
