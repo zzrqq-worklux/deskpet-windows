@@ -70,9 +70,31 @@ final class PetBubbleManager: ObservableObject {
     static let shared = PetBubbleManager()
 
     // MARK: - 对外状态
-    @Published private(set) var current: PetBubble?
+    @Published private(set) var current: PetBubble? {
+        didSet {
+            // 内容变化 → 高度可能改变 → 同步窗口尺寸并重定位
+            resizeBubbleWindow()
+        }
+    }
     /// 是否打开了输入框
-    @Published private(set) var isInputActive = false
+    @Published private(set) var isInputActive = false {
+        didSet {
+            resizeBubbleWindow()
+        }
+    }
+
+    /// 气泡尺寸档位（自动说话=small，用户对话=normal）
+    private(set) var activeSize: PetBubbleSize = .small
+
+    /// 由气泡视图实测上报的内容高度（pt）；nil = 尚未测量（用估算兜底）
+    private var measuredContentHeight: CGFloat?
+
+    /// 气泡视图在布局后上报实际内容高度（比估算准，保证按钮不溢出）
+    func reportContentHeight(_ height: CGFloat) {
+        guard measuredContentHeight != height else { return }
+        measuredContentHeight = height
+        resizeBubbleWindow()
+    }
 
     // MARK: - 动作 → 台词
     // 在这里改宠物说话的固定台词：数组里的每句话会随机抽一句。
@@ -111,27 +133,56 @@ final class PetBubbleManager: ObservableObject {
     private var speechTimer: Timer?
     private var hideTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
-    private var bubbleSizeObservation: Defaults.Observation?
 
-    /// 当前气泡大小（由设置驱动）。
-    /// 默认（代码绘制）皮肤：宽度不超过宠物窗口宽度。
-    /// 图片皮肤：宽度取用户设定（200~280pt），高度按图片原始比例计算，
-    /// 保证整张气泡图不变形、不裁切、文字有足够空间。
+    /// 当前气泡大小。
+    /// 宽度按当前档位（自动说话=small / 用户对话=normal）。
+    /// 高度：优先用视图实测高度（按钮不溢出），其次用估算，且不小于皮肤比例高度。
     var bubbleSize: CGSize {
-        let pref = Defaults[.petBubbleSize].size
-        // 图片皮肤：用完整用户设定宽度，不限制到宠物宽（横向气泡图需要空间）
+        let pref = activeSize.size
+
+        let width: CGFloat
+        var minHeightRatio: CGFloat = pref.height / pref.width
         if let imageName = Defaults[.petBubbleSkin].imageName,
            let image = NSImage(named: imageName),
            image.size.width > 0 {
-            let width = pref.width
-            let aspect = image.size.height / image.size.width
-            return CGSize(width: width, height: width * aspect)
+            width = pref.width
+            minHeightRatio = image.size.height / image.size.width
+        } else {
+            let petWidth = PetManager.shared.windowSize.width
+            width = min(pref.width, petWidth)
         }
-        // 默认皮肤：宽度不超过宠物宽度
-        let petWidth = PetManager.shared.windowSize.width
-        let width = min(pref.width, petWidth)
-        let height = width * (pref.height / pref.width)
+
+        var contentHeight = measuredContentHeight
+        if contentHeight == nil {
+            // 未测量时用估算兜底
+            var estimated: CGFloat = 0
+            let textWidth = max(width - 36, 60)
+            if let current = current {
+                if let userText = current.userText, !userText.isEmpty {
+                    estimated += Self.estimatedHeight(of: userText, fontSize: 10, width: textWidth, maxLines: 2)
+                }
+                estimated += current.isStreaming ? 18 : Self.estimatedHeight(of: current.petText, fontSize: 12, width: textWidth, maxLines: 6)
+            }
+            estimated += isInputActive ? 32 : 24
+            estimated += 28
+            contentHeight = estimated
+        }
+
+        let height = max(width * minHeightRatio, contentHeight ?? 0)
         return CGSize(width: width, height: height)
+    }
+
+    /// 估算一段文字在给定宽度/字号/最大行数下的高度（pt）
+    private static func estimatedHeight(of text: String, fontSize: CGFloat, width: CGFloat, maxLines: Int) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+        // 中英文混排粗略估算：每字符平均宽度 ≈ 字号 * 0.62（中文约 1.0，英文约 0.55）
+        var charCount = 0.0
+        for scalar in text.unicodeScalars {
+            charCount += scalar.properties.isIdeographic ? 1.0 : 0.6
+        }
+        let charsPerLine = max(width / (fontSize * 0.62), 1)
+        let lines = min(max(1, Int(ceil(charCount / charsPerLine))), maxLines)
+        return CGFloat(lines) * (fontSize * 1.3)
     }
 
     /// 气泡渲染器（换肤接口）：默认用当前实现，后续可替换成其他风格
@@ -185,13 +236,6 @@ final class PetBubbleManager: ObservableObject {
             .store(in: &cancellables)
 
         startSpeechTimer()
-
-        // 设置里调整气泡大小时：重设窗口尺寸并重新定位
-        bubbleSizeObservation = Defaults.observe(.petBubbleSize) { [weak self] _ in
-            Task { @MainActor in
-                self?.resizeBubbleWindow()
-            }
-        }
     }
 
     // MARK: - 交互入口
@@ -202,6 +246,7 @@ final class PetBubbleManager: ObservableObject {
 
     func openInput() {
         isInputActive = true
+        activeSize = .normal
         hideTask?.cancel()
         let configured = PetChatManager.shared.isConfigured
         current = PetBubble(
@@ -232,6 +277,7 @@ final class PetBubbleManager: ObservableObject {
     func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        activeSize = .normal
         guard PetChatManager.shared.isConfigured else {
             // 退出输入态：显示提示 + 关闭按钮，8 秒后自动消失
             isInputActive = false
@@ -290,6 +336,8 @@ final class PetBubbleManager: ObservableObject {
     }
 
     private func showPhrase(_ text: String) {
+        // 定时/动作触发的自言自语：用 small 档
+        activeSize = .small
         current = PetBubble(
             id: UUID(),
             userText: nil,
@@ -318,6 +366,9 @@ final class PetBubbleManager: ObservableObject {
     private func chatMessagesChanged(_ messages: [ChatMessage]) {
         guard let last = messages.last, last.role == .assistant else { return }
         guard let user = messages.dropLast().last(where: { $0.role == .user }) else { return }
+
+        // 对话回复：用 normal 档
+        activeSize = .normal
 
         // 用 assistant 消息 id 作为气泡 id → 流式期间 id 稳定，不闪烁
         let bubble = PetBubble(

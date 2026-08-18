@@ -1848,7 +1848,6 @@ struct PetSettings: View {
     @Default(.petStatDecaySpeed) var petStatDecaySpeed
     @Default(.petMusicDance) var petMusicDance
     @Default(.petRoamInterval) var petRoamInterval
-    @Default(.petBubbleSize) var petBubbleSize
     @Default(.petBubbleSpeechInterval) var petBubbleSpeechInterval
     @Default(.petBubbleSkin) var petBubbleSkin
     @State private var skinStatusText = ""
@@ -1934,11 +1933,6 @@ struct PetSettings: View {
                 Text("Activity frequency controls how often the pet decides to walk, sleep, or do tricks while idle. Lower intervals = more active (more memory/CPU); higher intervals = calmer and smoother.")
             }
             Section {
-                Picker("Bubble size", selection: $petBubbleSize) {
-                    ForEach(PetBubbleSize.allCases) { size in
-                        Text(size.rawValue).tag(size)
-                    }
-                }
                 Picker("Bubble skin", selection: $petBubbleSkin) {
                     ForEach(PetBubbleSkin.allCases) { skin in
                         Text(skin.rawValue).tag(skin)
@@ -1964,7 +1958,7 @@ struct PetSettings: View {
             } header: {
                 Text("Speech bubble")
             } footer: {
-                Text("气泡是宠物头顶的对话/自言自语气泡。Bubble skin 选择气泡外观（默认圆角卡片或鲸鱼气泡）；说话频率 = 待机自言的间隔；动作触发说话的冷却随它缩放。内容只显示当前对话，历史在 Chat 设置里查看。")
+                Text("气泡是宠物头顶的对话/自言自语气泡。宠物自己说话时用小尺寸，你打开对话时用大尺寸；Bubble skin 选择外观；说话频率 = 自言的间隔。历史在 Chat 设置里查看。")
             }
             Section {
                 TextField("Skin folder", text: $petSkinDirectory)

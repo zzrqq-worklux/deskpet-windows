@@ -72,7 +72,7 @@ enum PetBubbleSize: String, CaseIterable, Identifiable, Defaults.Serializable {
     /// 气泡窗口宽（pt）
     var width: CGFloat {
         switch self {
-        case .small: return 160
+        case .small: return 200
         case .normal: return 280
         case .large: return 360
         }

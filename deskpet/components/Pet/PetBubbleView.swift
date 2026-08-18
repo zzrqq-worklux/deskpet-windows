@@ -11,7 +11,6 @@ import SwiftUI
 
 struct DefaultPetBubbleView: View {
     @ObservedObject private var bubble = PetBubbleManager.shared
-    @Default(.petBubbleSize) private var bubbleSize: PetBubbleSize
     @Default(.petBubbleSkin) private var bubbleSkin: PetBubbleSkin
     @State private var input = ""
     @FocusState private var inputFocused: Bool
@@ -37,6 +36,23 @@ struct DefaultPetBubbleView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             bubbleCard
+            // 测量层：同宽度、无高度约束，让 SwiftUI 算出内容的自然高度并上报
+            // （窗口高度跟随内容，聊天按钮永远在气泡底部内）
+            contentArea
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: size.width)
+                .hidden()
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { bubble.reportContentHeight(geo.size.height) }
+                            .onChange(of: geo.size.height) { _, newH in
+                                bubble.reportContentHeight(newH)
+                            }
+                    }
+                )
         }
         .frame(width: size.width, height: size.height, alignment: .top)
         .onAppear { inputFocused = bubble.isInputActive }
@@ -64,7 +80,8 @@ struct DefaultPetBubbleView: View {
         }
     }
 
-    private var bubbleCard: some View {
+    /// 气泡内容（文字 + 输入框/按钮），皮肤只负责背景
+    private var contentArea: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let current = bubble.current {
                 if let userText = current.userText, !userText.isEmpty {
@@ -97,7 +114,7 @@ struct DefaultPetBubbleView: View {
                         .foregroundStyle(primaryText)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 Text("…")
@@ -113,6 +130,10 @@ struct DefaultPetBubbleView: View {
                 actionRow
             }
         }
+    }
+
+    private var bubbleCard: some View {
+        contentArea
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 14)
