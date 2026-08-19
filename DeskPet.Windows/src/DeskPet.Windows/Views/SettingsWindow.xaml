@@ -1,0 +1,35 @@
+<Window x:Class="DeskPet.Windows.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DeskPet 设置"
+        Width="720"
+        Height="480"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Closing="OnClosing">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="180" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" BorderBrush="#E0E0E0" BorderThickness="0,0,1,0">
+            <ListBox x:Name="SettingsNav"
+                     SelectionChanged="OnSettingsNavSelectionChanged"
+                     Margin="8"
+                     BorderThickness="0">
+                <ListBoxItem Content="宠物" />
+                <ListBoxItem Content="聊天" />
+                <ListBoxItem Content="设置" />
+            </ListBox>
+        </Border>
+
+        <StackPanel Grid.Column="1" Margin="24,20,24,20">
+            <TextBlock x:Name="SectionTitle" Text="宠物" FontSize="20" FontWeight="SemiBold" />
+            <Border Height="1" Background="#E0E0E0" Margin="0,8,0,16" />
+            <TextBlock Text="开发中 — Phase 3 实现"
+                       Foreground="#666666"
+                       FontSize="14" />
+        </StackPanel>
+    </Grid>
+</Window>
