@@ -13,6 +13,6 @@
     <ProjectReference Include="..\DeskPet.Core\DeskPet.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\assets\BoringPet\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="All" />
+    <Content Include="..\..\assets\BoringPet\**" Link="assets/BoringPet/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="All" />
   </ItemGroup>
 </Project>
