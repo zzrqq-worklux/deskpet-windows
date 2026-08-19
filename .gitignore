@@ -76,3 +76,6 @@ bin/
 obj/
 *.user
 .vs/
+
+# SDD plan workspaces (scratch)
+.superpowers/
