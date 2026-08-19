@@ -36,7 +36,8 @@ public static class SkinDirectoryScanner
                 if (urls.Count > 0)
                 {
                     variants.Add(urls);
-                    result.Sounds.TryAdd(act, ScanSound(path) ?? "");
+                    var s = ScanSound(path);
+                    if (s != null) result.Sounds.TryAdd(act, s);
                 }
             }
             if (variants.Count > 0) result.VariantUrls[act] = variants;

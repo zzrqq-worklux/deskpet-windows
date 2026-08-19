@@ -362,7 +362,6 @@ public sealed class PetSkin
             batch = urls[variant].Skip(fromIdx).Take(BackfillBatch).ToArray();
             total = urls[variant].Count;
         }
-        if (batch == null) return;
         var maxPixel = MaxPixelSize;
         _ = Task.Run(async () =>
         {
