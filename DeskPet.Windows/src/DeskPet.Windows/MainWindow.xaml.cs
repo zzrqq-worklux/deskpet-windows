@@ -1,8 +1,8 @@
-using Microsoft.UI.Xaml;
+using System.Windows;
 
 namespace DeskPet.Windows;
 
-public sealed partial class MainWindow : Window
+public partial class MainWindow : System.Windows.Window
 {
     public MainWindow()
     {

@@ -1,19 +1,11 @@
-using Microsoft.UI.Xaml;
+using System.Windows;
 
 namespace DeskPet.Windows;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
-    private MainWindow? _window;
-
     public App()
     {
         InitializeComponent();
-    }
-
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
-    {
-        _window = new MainWindow();
-        _window.Activate();
     }
 }
