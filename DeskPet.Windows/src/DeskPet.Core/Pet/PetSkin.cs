@@ -32,7 +32,10 @@ public sealed class PetSkin
     internal Dictionary<PetAction, List<int>> LoopPoints { get; } = new();
     internal HashSet<string> Loading { get; } = new();
     internal HashSet<string> PartialLoaded { get; } = new();
+    internal HashSet<string> Backfilling { get; } = new();
     internal HashSet<PetAction> Prefetched { get; } = new();
+    internal HashSet<PetAction> Played { get; } = new();
+    internal bool HomeOnlyMode { get; private set; }
     internal object SyncRoot => _lock;
 
     private const int ProbeMaxPixel = 300;
@@ -285,6 +288,7 @@ public sealed class PetSkin
     {
         Loading.Remove(key);
         if (frames.Count == 0) return;
+        if (HomeOnlyMode && action != PetAction.Home && action != PetAction.Fall) return;
         var (variants, sigList, loopPts) = PrepareSlots(action, variant);
         variants[variant] = frames;
         sigList[variant] = sigs;
@@ -299,6 +303,7 @@ public sealed class PetSkin
     {
         Loading.Remove(key);
         if (trailerFrames.Count == 0) return;
+        if (HomeOnlyMode && action != PetAction.Home && action != PetAction.Fall) return;
         var (variants, sigList, loopPts) = PrepareSlots(action, variant);
         variants[variant] = trailerFrames;
         sigList[variant] = allSigs;
@@ -308,6 +313,117 @@ public sealed class PetSkin
         LoopPoints[action] = loopPts;
         if (trailerFrames.Count < totalFrames) PartialLoaded.Add(key);
         Evict(action);
+    }
+
+    /// <summary>标记动作已播放：非 CoreActions ∪ {action} 的动作缓存截断到 trailer 帧（保留前 24 帧），
+    /// 重新标记这些动作的每个变体为 PartialLoaded，并清理其 Backfilling 条目。</summary>
+    public void MarkPlayed(PetAction action)
+    {
+        lock (_lock)
+        {
+            Played.Add(action);
+            var keep = new HashSet<PetAction>(CoreActions) { action };
+            foreach (var a in Cache.Keys.Where(a => !keep.Contains(a)))
+            {
+                if (Cache.TryGetValue(a, out var variants))
+                {
+                    for (var vi = 0; vi < variants.Count; vi++)
+                    {
+                        if (variants[vi].Count == 0) continue;
+                        variants[vi] = variants[vi].GetRange(0, Math.Min(TrailerFrameCount, variants[vi].Count));
+                    }
+                }
+                if (VariantUrls.TryGetValue(a, out var urls))
+                {
+                    for (var vi = 0; vi < urls.Count; vi++) PartialLoaded.Add(Key(a, vi));
+                }
+                var prefix = a.FolderName() + "_";
+                Backfilling.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
+            }
+        }
+    }
+
+    /// <summary>播放进度接近缓存末尾时（距末尾 ≤ 8 帧），后台解码下一批帧追加到缓存（Swift backfillIfNeeded 移植）。</summary>
+    public void BackfillIfNeeded(PetAction action, int variant, int currentIndex)
+    {
+        string key;
+        IReadOnlyList<string>? batch;
+        int total;
+        lock (_lock)
+        {
+            key = Key(action, variant);
+            if (!PartialLoaded.Contains(key) || Backfilling.Contains(key)) return;
+            if (!Cache.TryGetValue(action, out var variants) || variant < 0 || variant >= variants.Count || variants[variant].Count == 0) return;
+            if (!VariantUrls.TryGetValue(action, out var urls) || variant < 0 || variant >= urls.Count || urls[variant].Count == 0) return;
+            if (variants[variant].Count >= urls[variant].Count) { PartialLoaded.Remove(key); return; }
+            if (variants[variant].Count - currentIndex > 8) return;
+            Backfilling.Add(key);
+            var fromIdx = variants[variant].Count;
+            batch = urls[variant].Skip(fromIdx).Take(BackfillBatch).ToArray();
+            total = urls[variant].Count;
+        }
+        if (batch == null) return;
+        var maxPixel = MaxPixelSize;
+        _ = Task.Run(async () =>
+        {
+            var frames = new List<DecodedFrame>();
+            try
+            {
+                foreach (var url in batch)
+                {
+                    var frame = await _decoder.DecodeAsync(url, maxPixel);
+                    if (frame != null) frames.Add(frame);
+                }
+                lock (_lock) { AppendFrames(action, variant, frames, key, total); }
+            }
+            catch
+            {
+                lock (_lock) { Backfilling.Remove(key); }
+            }
+        });
+    }
+
+    /// <summary>追加流式补齐的帧到缓存数组（Swift appendFrames 移植）。调用方须持有 _lock。</summary>
+    private void AppendFrames(PetAction action, int variant, List<DecodedFrame> images, string key, int totalUrls)
+    {
+        Backfilling.Remove(key);
+        if (images.Count == 0) return;
+        if (HomeOnlyMode && action != PetAction.Home && action != PetAction.Fall) return;
+        if (!Cache.TryGetValue(action, out var variants) || variant < 0 || variant >= variants.Count) return;
+        variants[variant].AddRange(images);
+        if (variants[variant].Count >= totalUrls) PartialLoaded.Remove(key);
+    }
+
+    /// <summary>回窝节能模式：缓存只保留 {home, fall}，清空 Prefetched/played/PartialLoaded/Backfilling，并置 HomeOnlyMode。</summary>
+    public void TrimToHomeOnly()
+    {
+        lock (_lock)
+        {
+            var keep = new HashSet<PetAction> { PetAction.Home, PetAction.Fall };
+            foreach (var k in Cache.Keys.Where(k => !keep.Contains(k)).ToArray()) Cache.Remove(k);
+            foreach (var k in Signatures.Keys.Where(k => !keep.Contains(k)).ToArray()) Signatures.Remove(k);
+            foreach (var k in LoopPoints.Keys.Where(k => !keep.Contains(k)).ToArray()) LoopPoints.Remove(k);
+            Prefetched.Clear();
+            Played.Clear();
+            PartialLoaded.Clear();
+            Backfilling.Clear();
+            HomeOnlyMode = true;
+        }
+    }
+
+    /// <summary>出窝时退出节能模式；若 fall 帧数 &lt; 总帧数则重新标记 fall_0 为 PartialLoaded。</summary>
+    public void ExitHomeOnlyMode()
+    {
+        lock (_lock)
+        {
+            HomeOnlyMode = false;
+            if (Cache.TryGetValue(PetAction.Fall, out var variants) && variants.Count > 0 && variants[0].Count > 0
+                && VariantUrls.TryGetValue(PetAction.Fall, out var urls) && urls.Count > 0
+                && variants[0].Count < urls[0].Count)
+            {
+                PartialLoaded.Add(Key(PetAction.Fall, 0));
+            }
+        }
     }
 
     /// <summary>兜底动作帧：home 用 sleep 末帧（无则 idle 首帧）并写入缓存；其余用 idle/walk/drag。</summary>
