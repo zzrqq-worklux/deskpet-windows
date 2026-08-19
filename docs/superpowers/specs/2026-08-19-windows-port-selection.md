@@ -12,11 +12,11 @@ DeskPet 是 macOS SwiftUI 桌面宠物应用（基于 boring.notch，GPLv3），
 
 | 维度 | 决策 |
 |------|------|
-| 技术栈 | **WinUI 3 (C#/.NET 8)** — 微软官方现代桌面框架，透明/置顶/托盘/系统集成最佳 |
+| 技术栈 | **WPF (C#/.NET 8)** — 纯 dotnet CLI 可构建（无需 VS/管理员），透明置顶/托盘/多屏最成熟；~~WinUI 3~~ 因本机无管理员、VS Build Tools 无法安装而否决 |
 | 范围 | **宠物优先 MVP** — 先移植宠物核心，刘海特色功能（日历/文件架/HUD）后置 |
-| 复用 | **框架重写 + 逻辑移植** — UI 层用 WinUI 重写；业务逻辑按其设计翻译为 C#，保持行为一致 |
+| 复用 | **框架重写 + 逻辑移植** — UI 层用 WPF 重写；业务逻辑按其设计翻译为 C#，保持行为一致 |
 
-> 否决项：SwiftUI 无 Windows 运行支持；Swift for Windows 无 UI 框架；Electron/Tauri 引入非原生栈、内存/包体劣势，且无法直接复用 Swift 业务逻辑。
+> 否决项：SwiftUI 无 Windows 运行支持；Swift for Windows 无 UI 框架；WinUI 3/Uno/MAUI 依赖 VS Build Tools（本机不可装，需管理员写 ProgramData）；Tauri 的 Windows 构建需 MSVC 工具链（同样被 VS 卡住）；Electron 引入 web 栈、包体/内存大且 Core 逻辑需重写。**WPF 是唯一零工具链、纯 dotnet CLI、可直接复用 C# Core 层（59 项单测）的方案。**
 
 ## 3. 现有架构盘点（可移植性矩阵）
 
@@ -37,9 +37,9 @@ DeskPet 是 macOS SwiftUI 桌面宠物应用（基于 boring.notch，GPLv3），
 
 | 原能力 | macOS 依赖 | Windows 替代 |
 |--------|-----------|-------------|
-| 无边框置顶窗口 | `NSWindow`/`NSPanel`/`NSScreen`/`CGSSpace`(私有) | WinUI 3 `AppWindow` + `WindowChrome`，`OverlappedPresenter`，WS_EX_TOPMOST/无激活，多显示器 `Windows.Graphics.Display` |
-| 点击穿透/拖拽 | `NSEvent` 追踪、`PanGesture` | WinUI Pointer/鼠标钩子（`WH_MOUSE_LL`），`SetWindowLong` 点击穿透 |
-| 系统托盘 | `MenuBarExtra`/`NSStatusBar` | `System.Windows.Forms.NotifyIcon`（WinUI 3 混用） |
+| 无边框置顶窗口 | `NSWindow`/`NSPanel`/`NSScreen`/`CGSSpace`(私有) | WPF `Window`：`WindowStyle=None` + `AllowsTransparency=true` + `Topmost=true`（分层窗口），多屏 `Screen.AllScreens` |
+| 点击穿透/拖拽 | `NSEvent` 追踪、`PanGesture` | WPF 鼠标事件 / 全局钩子（`WH_MOUSE_LL`），`SetWindowLong` 点击穿透 |
+| 系统托盘 | `MenuBarExtra`/`NSStatusBar` | `System.Windows.Forms.NotifyIcon` |
 | 设置持久化 | `Defaults`(sindresorhus) | `Microsoft.UI.Xaml.ApplicationDataContainer` 或设置文件 |
 | 音频播放 | `NSSound`/`AVAudioPlayer` | `Windows.Media.Playback.MediaPlayer` / NAudio |
 | 键盘快捷键 | `KeyboardShortcuts`(sindresorhus) | 全局热键 `RegisterHotKey` / 快捷键框架 |
@@ -55,43 +55,45 @@ DeskPet 是 macOS SwiftUI 桌面宠物应用（基于 boring.notch，GPLv3），
 - 更新：`Sparkle` → 自研/`Squirrel.Windows`
 - 助手进程：XPC → 普通子进程 / 后台服务
 
-## 4. 目标架构（WinUI 3 + MVVM）
+## 4. 目标架构（WPF + MVVM）
 
 ```
-DeskPet.Windows (WinUI 3 / .NET 8)
-├── App/                       入口、窗口管理器、托盘、单实例
-├── Services/                  平台服务接口（窗口/托盘/音频/热键/设置）
-├── Core/                      纯逻辑层（自包含，可单测）
+DeskPet.Windows (WPF / .NET 8)
+├── App.xaml(.cs)             入口、单实例、启动宠物窗口
+├── Services/                 平台服务接口（窗口/托盘/音频/热键/设置）
+├── Core/                      纯逻辑层（自包含，可单测）— 已交付（59 项测试）
 │   ├── Pet/
-│   │   ├── PetManager.cs      行为状态机（移植 PetManager.swift）
+│   │   ├── PetAction.cs / PetLifeState.cs
 │   │   ├── PetSkin.cs         帧动画引擎（移植 SpriteAnimator.swift）
-│   │   ├── PetAction.cs / PetState.cs
-│   │   └── PetBubbleManager.cs
-│   ├── Chat/
-│   │   ├── PetChatClient.cs    OpenAI 兼容流式（移植 PetChatManager.swift）
-│   │   └── VectorStore.cs      本地向量库（移植 LocalVectorStore.swift）
-│   └── RAG/RAGManager.cs
-├── ViewModels/                MVVM（WinUI 绑定 @Published → INotifyPropertyChanged）
-├── Views/                     XAML 页面：主宠物页、设置页、气泡、面板
-└── Assets/                    BoringPet 素材（复用现有 PNG 序列帧）
+│   │   ├── PetSkinConfig.cs    config.json 解析
+│   │   ├── SkinDirectoryScanner.cs / NaturalComparer.cs
+│   │   ├── FrameSignatureComputer.cs
+│   │   └── PetAnimationLoop.cs 帧推进状态机
+│   ├── Chat/                  （Phase 2）
+│   └── RAG/                   （Phase 2）
+├── ViewModels/                MVVM（INotifyPropertyChanged + CommunityToolkit.Mvvm）
+├── Views/                     XAML：主宠物窗口、设置窗、气泡、面板
+└── assets/BoringPet/          内置素材（复用现有 PNG 序列帧）
 ```
 
 关键原则：
-- **Core 层零平台依赖**（不引用 WinUI），保证行为/动画逻辑可直接移植并做单元测试（xUnit）。
+- **Core 层零平台依赖**（不引用 WPF），保证行为/动画逻辑可直接移植并做单元测试（xUnit）— Phase 0 已交付并通过 59 项测试。
 - 平台能力通过接口注入（`IWindowService`/`ITrayService`/`IAudioService`/`ISettingsService`…），与 Swift 版 `PetWindowController` 订阅 `windowPosition/windowAlpha` 的模式一一对应。
-- 帧引擎中 `ImageIO`/`CGImage` 解码 → .NET `System.Drawing`/`Windows.Graphics.Imaging`；签名/loopPoint/流式补齐算法原样移植。
+- 帧引擎中 `ImageIO`/`CGImage` 解码 → .NET `System.Windows.Media.Imaging`（WPF `BitmapImage`/`WriteableBitmap`，PNG 走 WIC）；签名/loopPoint/流式补齐算法已原样移植（Core 内测试通过）。
 
 ## 5. 平台能力映射（关键项）
 
-| Swift 概念 | C#/WinUI 对应 |
+| Swift 概念 | C#/WPF 对应 |
 |-----------|--------------|
 | `@Published` + ObservableObject | `INotifyPropertyChanged` + CommunityToolkit.Mvvm `[ObservableProperty]` |
-| SwiftUI View | XAML UserControl/Page |
-| `NSScreen.frame` 多屏 | `DisplayArea`/`Windows.System.Display` |
-| `Timer` on `.common` RunLoop（拖拽中动画不断） | `DispatcherQueue` + 高优先级，或独立渲染线程（关键：拖拽期间不能卡动画） |
-| `NSSound(contentsOf:)` 异步加载 | `MediaPlayer` 异步 `SetSource`（避免阻塞 UI 线程） |
-| `NSImage` 降采样 | `BitmapDecoder` + `SoftwareBitmap`（PNG 解码仍用 WIC） |
+| SwiftUI View | XAML Window/UserControl |
+| `NSScreen.frame` 多屏 | `System.Windows.Forms.Screen` / `SystemParameters` |
+| `Timer` on `.common` RunLoop（拖拽中动画不断） | `DispatcherTimer`（高优先级）或后台渲染线程（关键：拖拽期间不能卡动画） |
+| `NSSound(contentsOf:)` 异步加载 | `MediaPlayer`/`SoundPlayer` 异步加载（避免阻塞 UI 线程） |
+| `NSImage` 降采样 | `BitmapImage`（`DecodePixelWidth`）/ `WriteableBitmap`（PNG 经 WIC 解码） |
 | `NotificationCenter.post(.openNotchToPet)` | 事件总线 / Messenger |
+| `NSWindow`/`NSPanel` 无边框置顶 | WPF `Window`：`WindowStyle=None` + `AllowsTransparency=true` + `Topmost=true`（分层窗口） |
+| `MenuBarExtra`/`NSStatusBar` | `System.Windows.Forms.NotifyIcon` |
 
 ## 6. 刘海概念的 Windows 重设计（MVP 阶段）
 
@@ -104,9 +106,9 @@ Windows 无菜单栏刘海，"回窝/进窝"载体改为**系统托盘**：
 ## 7. MVP 范围与里程碑
 
 ### Phase 0 — 工程底座
-- 建 WinUI 3 解决方案、MVVM、依赖注入、托盘/单实例骨架
+- 建 WPF 解决方案、MVVM、依赖注入、托盘/单实例骨架
 - 素材管线：PNG 解码 + 帧缓存框架（先接内置 BoringPet 素材）
-- **验收**：能启动，无边框置顶透明窗口显示宠物
+- **验收**：能启动，无边框置顶透明窗口显示宠物（Core 层 59 项单测通过）
 
 ### Phase 1 — 宠物核心
 - `PetManager` 状态机 + `PetSkin` 帧引擎（部分缓存/流式补齐/loopPoint）移植，xUnit 覆盖行为决策
@@ -129,7 +131,7 @@ Windows 无菜单栏刘海，"回窝/进窝"载体改为**系统托盘**：
 
 | 风险 | 等级 | 对策 |
 |------|------|------|
-| 拖拽时动画停顿（WinUI 消息泵） | 高 | 动画驱动放后台线程/独立 DispatcherQueue 高优先级；Swift 版已有 `.common` 模式经验 |
+| 拖拽时动画停顿（WPF 消息泵） | 高 | 动画驱动放后台线程/高优先级 `DispatcherTimer`；Swift 版已有 `.common` 模式经验 |
 | 无边框透明置顶窗口兼容性 | 中 | 用 `AppWindow` + 覆盖层；多屏 DPI 需逐步验证 |
 | 帧解码性能（大序列帧） | 中 | 沿用降采样 + 部分缓存 + 流式补齐；用 WIC 异步解码 |
 | 行为一致性 | 中 | Core 层用同一决策算法逐行翻译，xUnit 对照 Swift 行为 |
@@ -140,7 +142,7 @@ Windows 无菜单栏刘海，"回窝/进窝"载体改为**系统托盘**：
 
 | 决策项 | 结论 |
 |--------|------|
-| .NET / WinUI 版本 | **.NET 8 LTS + Windows App SDK / WinUI 3 1.6.x**（默认最新稳定） |
+| .NET / UI 框架 | **.NET 8 LTS + WPF**（纯 dotnet CLI 构建，无需 VS/管理员） |
 | macOS 分支 | **不维护** — macOS 是另一贡献者的事；本分支 `windows-adaptation` 承载 Windows 版 |
 | 仓库结构 | 见 §10 构建建议 |
 | 打包 | 见 §10 打包建议 |
@@ -155,7 +157,7 @@ Windows 无菜单栏刘海，"回窝/进窝"载体改为**系统托盘**：
 deskpet/                      ← 本仓库（windows-adaptation 分支）
 ├── docs/superpowers/...      ← 本设计与后续实施计划
 ├── (macOS 源码原样保留)      ← 不再由本分支维护
-└── DeskPet.Windows/          ← 全新 WinUI 3 解决方案（自包含，独立 csproj/sln）
+└── DeskPet.Windows/          ← 全新 WPF 解决方案（自包含，独立 csproj/sln）
     ├── src/DeskPet.Windows/      主项目（App/Core/Services/ViewModels/Views）
     ├── tests/DeskPet.Windows.Core.Tests/  Core 层 xUnit 单测
     ├── assets/BoringPet/          内置宠物素材（拷贝自 macOS 版 BoringPet）
@@ -170,8 +172,8 @@ deskpet/                      ← 本仓库（windows-adaptation 分支）
 ### 10.2 打包（MVP 建议，按此执行）
 
 **MVP 用「免安装便携版」**：
-- 项目配置 `WindowsPackageType=None` + `WindowsAppSDKSelfContained=true`（自包含 Windows App SDK，无需用户预装运行时），输出为可拷贝目录，含 exe + 依赖 + `assets/BoringPet`。
-- 自启动通过注册表 `HKCU\...\Run`（与 macOS `LaunchAtLogin` 对应）。
+- WPF 单文件/自包含发布（`dotnet publish -c Release -r win-x64 --self-contained`），输出可拷贝目录，含 exe + 依赖 + `assets/BoringPet`。
+- 自启动通过注册表 `HKCU\...\Run`（用户级，无需管理员；与 macOS `LaunchAtLogin` 对应）。
 - 更新策略 MVP 不实现（`Sparkle` 后置项）。
 
 未来如需正式分发，再评估 MSIX 打包 / Squirrel.Windows 增量更新（Phase 后置）。
