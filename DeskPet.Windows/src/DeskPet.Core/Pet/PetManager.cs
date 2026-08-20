@@ -11,8 +11,8 @@ namespace DeskPet.Core.Pet;
 internal enum PetMovementMode { Floor, Falling }
 
 /// <summary>
-/// 桌面宠物状态中枢（Swift <c>PetManager.swift</c> 移植，T4 范围：走动/掉落物理 + 行为 AI + 属性衰减）。
-/// 回窝走回/淡出流程由 T5 补齐。
+/// 桌面宠物状态中枢（Swift <c>PetManager.swift</c> 移植，T5 范围：回窝/出窝流程 + 拖拽投放托盘重设计）。
+/// 走回顶部 → 淡出 → AtHome（节能 trim）；出窝从顶部上方掉落回桌面（ExitHomeOnlyMode）。
 /// </summary>
 public class PetManager : INotifyPropertyChanged
 {
@@ -42,7 +42,19 @@ public class PetManager : INotifyPropertyChanged
     // MARK: - 生命周期
 
     private PetLifeState _lifeState = PetLifeState.Roaming;
-    public PetLifeState LifeState { get => _lifeState; internal set => SetField(ref _lifeState, value); }
+
+    /// <summary>生命周期状态。AtHome=回窝节能（仅 home/fall 素材可加载）。</summary>
+    public PetLifeState LifeState
+    {
+        get => _lifeState;
+        internal set
+        {
+            if (SetField(ref _lifeState, value)) LifeStateChanged?.Invoke(value);
+        }
+    }
+
+    /// <summary>生命周期切换事件（Swift @Published lifeState 对应；T8 托盘图标消费）。</summary>
+    public event Action<PetLifeState>? LifeStateChanged;
 
     private bool _isDragging;
     public bool IsDragging { get => _isDragging; internal set => SetField(ref _isDragging, value); }
@@ -55,6 +67,12 @@ public class PetManager : INotifyPropertyChanged
     private double _windowAlpha = 1;
     public double WindowAlpha { get => _windowAlpha; internal set => SetField(ref _windowAlpha, value); }
 
+    // MARK: - 拖拽投放（Windows 托盘重设计：主屏工作区顶部中央投放区）
+
+    private bool _isHoveringDropZone;
+    /// <summary>当前是否悬停在投放区（拖拽中，由窗口层每帧调用 EvaluateNotchDropHover 更新；Swift isHoveringNotchDropZone）。</summary>
+    public bool IsHoveringDropZone { get => _isHoveringDropZone; internal set => SetField(ref _isHoveringDropZone, value); }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     // MARK: - 依赖
@@ -63,7 +81,7 @@ public class PetManager : INotifyPropertyChanged
     private readonly ISettingsService _settings;
     private readonly IAudioService _audio;
     private readonly IMusicService _music;
-    private readonly IScreenInfo _screens;   // T4/T5 物理与回窝目标计算使用（本任务未用）
+    private readonly IScreenInfo _screens;   // T4/T5 物理与回窝目标/投放区计算使用
     private readonly Random _rng;
     private readonly Func<Task<PetSkin?>>? _reloadSkin;
 
@@ -79,6 +97,12 @@ public class PetManager : INotifyPropertyChanged
     /// <summary>当前运动模式（测试用只读观察）。</summary>
     internal PetMovementMode MovementMode => _movementMode;
 
+    /// <summary>回窝中（走回/淡出阶段；测试用只读观察，Swift movingHome）。</summary>
+    internal bool MovingHome => _movingHome;
+
+    /// <summary>淡出/淡入进行中（测试用只读观察，Swift fading）。</summary>
+    internal bool Fading => _fading;
+
     // MARK: - 内部状态
 
     private readonly PetAnimationLoop _loop = new();
@@ -92,6 +116,10 @@ public class PetManager : INotifyPropertyChanged
     private PetMovementMode _movementMode = PetMovementMode.Floor;
     /// <summary>生命周期标记（Swift start/stop 的计时器由窗口层持有，T6；Core 不建计时器）。</summary>
     private bool _running;
+    /// <summary>回窝中（走回/淡出阶段；Swift movingHome，isHomeTransitioning 对应）。</summary>
+    private bool _movingHome;
+    /// <summary>淡出（回窝）/淡入（被打断的淡出恢复）进行中（Swift fading）。</summary>
+    private bool _fading;
 
     // MARK: - T4 走动物理 / 掉落物理 / 属性衰减内部状态
 
@@ -108,6 +136,7 @@ public class PetManager : INotifyPropertyChanged
     private const double Gravity = 500;           // Swift gravity（匹配 fall 动画时长）
     private const double StatIntervalSeconds = 60;
     private const double DiagnosticsIntervalSeconds = 5;
+    private const double HomeFadeRate = 3.6;      // 淡出/淡入 ±0.06 / 60fps-tick（Swift 331-357，折算每秒）
 
     public PetManager(
         PetSkin skin,
@@ -188,11 +217,16 @@ public class PetManager : INotifyPropertyChanged
         }
 
         // 3. 移动：走路 / 掉落（Swift 286-329）
+        // 兜底：回窝途中目标丢失（被任何路径打断）→ 复位回窝状态，避免 movingHome 永久卡死（Swift 281-285）
+        if (_movingHome && _walkTarget == null && !_fading)
+        {
+            _movingHome = false;
+        }
         switch (_movementMode)
         {
             case PetMovementMode.Floor:
                 if (_walkTarget is { } target && !IsDragging && !_wasMusicPlaying
-                    && LifeState == PetLifeState.Roaming)
+                    && (LifeState == PetLifeState.Roaming || _movingHome))
                 {
                     var position = WindowPosition ?? InitialRoamingPosition();
                     var dx = target.X - position.X;
@@ -201,11 +235,18 @@ public class PetManager : INotifyPropertyChanged
                     var step = WalkSpeed * dt;
                     if (distance <= step)
                     {
-                        // 到点 → Idle + 待机计时重置（Swift 295-304）
+                        // 到点：回窝中 → 走回完成，开始淡出；否则 Idle + 待机计时重置（Swift 295-304）
                         WindowPosition = target;
                         _walkTarget = null;
-                        SetAction(PetAction.Idle);
-                        ResetIdleCounter();
+                        if (_movingHome)
+                        {
+                            BeginHomeFadeout();
+                        }
+                        else
+                        {
+                            SetAction(PetAction.Idle);
+                            ResetIdleCounter();
+                        }
                     }
                     else
                     {
@@ -238,6 +279,36 @@ public class PetManager : INotifyPropertyChanged
                 SetAction(PetAction.Idle);
                 ResetIdleCounter();
                 break;
+        }
+
+        // 3.5 透明度渐变（回窝淡出 / 淡出被中断后淡回，Swift 331-357）
+        if (_fading)
+        {
+            var next = WindowAlpha + (_movingHome ? -HomeFadeRate : HomeFadeRate) * dt;
+            if (_movingHome && next <= 0)
+            {
+                WindowAlpha = 0;
+                _fading = false;
+                LifeState = PetLifeState.AtHome;
+                _movingHome = false;
+                // 回窝后切 .home（睡眠姿势）而非 .idle：idle 逐帧请求会绕过 homeOnlyMode 拦截，
+                // 把刚 trim 清掉的 idle 又加载回来；.home 只有 1 帧且 homeOnlyMode 允许（Swift 340-344）。
+                SetAction(PetAction.Home);
+                // 回窝节能：卸载所有活动动作帧，只保留 .home + .fall（出窝动画）
+                _skin.TrimToHomeOnly();
+            }
+            else if (!_movingHome && next >= 1)
+            {
+                WindowAlpha = 1;
+                _fading = false;
+                LifeState = PetLifeState.Roaming;
+                SetAction(PetAction.Idle);
+                ResetIdleCounter();
+            }
+            else
+            {
+                WindowAlpha = next;
+            }
         }
 
         // 4. 帧推进（Swift 359-432）
@@ -275,9 +346,9 @@ public class PetManager : INotifyPropertyChanged
             }
         }
 
-        // 5. 行为 AI（Swift 434-440）：仅在站立待机时决策，走动/睡眠/一次性动画期间不打断
+        // 5. 行为 AI（Swift 434-440）：仅在站立待机时决策，走动/回窝/睡眠/一次性动画期间不打断
         if (LifeState == PetLifeState.Roaming && !IsDragging && !_wasMusicPlaying
-            && _movementMode == PetMovementMode.Floor && Action == PetAction.Idle)
+            && !_movingHome && _movementMode == PetMovementMode.Floor && Action == PetAction.Idle)
         {
             _idleCounter -= dt;
             if (_idleCounter <= 0) DecideNextBehavior();
@@ -290,7 +361,8 @@ public class PetManager : INotifyPropertyChanged
             _diagnosticsElapsed = 0;
             Debug.WriteLine(
                 $"[Pet] action={Action} lifeState={LifeState} musicPlaying={_wasMusicPlaying} " +
-                $"dragging={IsDragging} floor={_movementMode == PetMovementMode.Floor} alpha={WindowAlpha:F2} " +
+                $"dragging={IsDragging} movingHome={_movingHome} fading={_fading} " +
+                $"floor={_movementMode == PetMovementMode.Floor} alpha={WindowAlpha:F2} " +
                 $"walkTarget={(_walkTarget != null ? "set" : "nil")} idleCounter={_idleCounter:F1}");
         }
     }
@@ -320,7 +392,7 @@ public class PetManager : INotifyPropertyChanged
         SetAction(PetAction.Happy);
     }
 
-    /// <summary>拎起（Swift 721-731）：打断走动，目标清除。movingHome/fading 复位属 T5 字段。</summary>
+    /// <summary>拎起（Swift 721-731）：打断任何小把戏，包括回窝（movingHome/fading 复位）。</summary>
     public void StartDrag()
     {
         if (LifeState != PetLifeState.Roaming) return;
@@ -328,6 +400,9 @@ public class PetManager : INotifyPropertyChanged
         _walkTarget = null;
         _movementMode = PetMovementMode.Floor;
         DizzyAngle = 0;
+        // 若正在回窝途中被拎起，必须复位回窝状态，否则 movingHome 永久卡住（Swift 727-729）
+        _movingHome = false;
+        _fading = false;
         SetAction(PetAction.Drag);
     }
 
@@ -476,12 +551,14 @@ public class PetManager : INotifyPropertyChanged
         }
     }
 
-    /// <summary>被打断 → 立刻掉下来（Swift 580-588；movingHome/fading 复位属 T5 字段，本任务无）。</summary>
+    /// <summary>被打断 → 立刻掉下来（Swift 580-588；movingHome/fading 一并复位）。</summary>
     internal void InterruptToFall()
     {
         _walkTarget = null;
         _movementMode = PetMovementMode.Falling;
         _fallVelocity = 0;
+        _movingHome = false;
+        _fading = false;
         SetAction(PetAction.Fall);
     }
 
@@ -552,32 +629,115 @@ public class PetManager : INotifyPropertyChanged
         Happiness = Math.Min(100, Math.Max(0, Happiness + (50 - Happiness) * 0.04));
     }
 
-    // MARK: - 回窝 / 出窝（Swift 610-693 的 T3 骨架；物理走回/掉落/淡出在 T5）
+    // MARK: - 回窝 / 出窝（Swift 607-698）
 
-    /// <summary>走回屏幕顶部中央 → 淡出 → AtHome（Swift 610-635）。本任务仅 guard；走回+淡出在 T5。</summary>
+    /// <summary>走回屏幕顶部中央 → 淡出 → AtHome（Swift 610-635）。目标点=工作区顶 − 窗口高 − 4
+    /// （无物理刘海 inset 概念，直接用工作区顶，Swift 627-631）。</summary>
     public void GoHome()
     {
-        // guard 与 Swift 一致（movingHome 为 T5 字段，尚不存在）
-        if (LifeState != PetLifeState.Roaming || IsDragging) return;
-        // T5：选目标屏 + 置 movingHome/walkTarget + SetAction(Walk) + 到位淡出 + AtHome + TrimToHomeOnly
+        if (LifeState != PetLifeState.Roaming || IsDragging || _movingHome) return;
+        var screen = CurrentScreen();
+        _walkTarget = null;
+        _movingHome = true;
+        _fading = false;
+        _movementMode = PetMovementMode.Floor;
+        DizzyAngle = 0;
+        var size = WindowSize;
+        var target = (screen.X + screen.Width / 2 - size.Width / 2,
+                      screen.Y + screen.Height - size.Height - 4);
+        UpdateFacing(target);
+        _walkTarget = target;
+        SetAction(PetAction.Walk);
     }
 
-    /// <summary>瞬间进窝（Swift 639-662）：拖拽投放场景跳过走回。本任务仅 guard；淡出/AtHome 在 T5。</summary>
+    /// <summary>瞬间进窝：跳过走回动画，直接定位到回窝目标点并淡出（Swift 639-662）。
+    /// 用于拖拽投放场景。</summary>
     public void SnapHome()
     {
-        if (LifeState != PetLifeState.Roaming) return;
-        // T5：定位目标点 + 淡出 + AtHome + TrimToHomeOnly
+        if (LifeState != PetLifeState.Roaming || _movingHome) return;
+        var screen = CurrentScreen();
+        _walkTarget = null;
+        _movingHome = true;
+        _movementMode = PetMovementMode.Floor;
+        DizzyAngle = 0;
+        var size = WindowSize;
+        WindowPosition = (screen.X + screen.Width / 2 - size.Width / 2,
+                          screen.Y + screen.Height - size.Height - 4);
+        // 直接进入淡出（不经走路），BeginHomeFadeout 会设 fading=true + 切 idle
+        BeginHomeFadeout();
     }
 
-    /// <summary>出窝（Swift 667-693）：状态翻转（Roaming + alpha=1 + Fall）；掉落物理与 ExitHomeOnlyMode 在 T5。</summary>
+    /// <summary>出窝（Swift 667-693）：从工作区顶上方 200pt 自由落体出场，
+    /// 必须调用 ExitHomeOnlyMode 清除回窝节能模式（C# Prefetch 不自动清除，不调则出窝无帧可播）。</summary>
     public void LeaveHome()
     {
-        if (LifeState != PetLifeState.AtHome) return;
+        if (LifeState != PetLifeState.AtHome || _movingHome) return;
+        var screen = CurrentScreen();
+        var size = WindowSize;
+        // 出窝初始位置：宠物顶部大幅超出工作区顶（200pt 探出），视觉上像从屏幕顶端"探出来"再掉落
+        WindowPosition = (screen.X + screen.Width / 2 - size.Width / 2,
+                          screen.Y + screen.Height - size.Height + 200);
         WindowAlpha = 1;
+        _movingHome = false;
+        _fading = false;
         LifeState = PetLifeState.Roaming;
+        // 自由落体出场
         _movementMode = PetMovementMode.Falling;
+        _fallVelocity = 0;
+        // 出窝：清除回窝节能模式，并确保 fall 动画能流式补齐（Swift 687-691）
+        _skin.ExitHomeOnlyMode();
         SetAction(PetAction.Fall);
-        // T5：ExitHomeOnlyMode + 重力掉落物理 + 落地
+    }
+
+    /// <summary>回窝走回动画完成后开始淡出（Swift 695-698）：fading=true + 切 idle。</summary>
+    private void BeginHomeFadeout()
+    {
+        _fading = true;
+        SetAction(PetAction.Idle);
+    }
+
+    // MARK: - 拖拽投放（Windows 托盘重设计：投放区 = 主屏工作区顶部中央 50% 宽 × 120pt 高矩形，
+    // Swift 111-144 的刘海投放区语义替换；进入即触发 SnapHome）
+
+    /// <summary>投放区矩形（Swift notchDropRegion 95-104 的 Windows 重设计）。</summary>
+    private Rect DropZone()
+    {
+        var wa = _screens.PrimaryWorkArea;
+        var width = wa.Width * 0.5;
+        const double height = 120.0;
+        return new Rect(wa.X + wa.Width / 2 - width / 2, wa.Y + wa.Height - height, width, height);
+    }
+
+    /// <summary>拖拽期间每帧调用：进入投放区（首次）→ 置 IsHoveringDropZone + 触发 SnapHome；
+    /// 离开投放区 → 复位 IsHoveringDropZone（Swift 111-126 对应语义）。</summary>
+    public void EvaluateNotchDropHover((double X, double Y) point)
+    {
+        var inside = InsideDropZone(point);
+        if (inside && !_isHoveringDropZone)
+        {
+            IsHoveringDropZone = true;
+            SnapHome();
+        }
+        else if (!inside && _isHoveringDropZone)
+        {
+            IsHoveringDropZone = false;
+        }
+    }
+
+    /// <summary>拖拽松手后调用：返回宠物是否已进窝（true=已触发 SnapHome 且进窝成功，
+    /// 调用方据此决定不再做落地动画；false=未进窝，宠物在松手位置落地）。</summary>
+    public bool ExitNotchDropHover()
+    {
+        if (!_isHoveringDropZone) return false;
+        IsHoveringDropZone = false;
+        return LifeState == PetLifeState.AtHome;
+    }
+
+    private bool InsideDropZone((double X, double Y) point)
+    {
+        var zone = DropZone();
+        return point.X >= zone.X && point.X <= zone.X + zone.Width
+            && point.Y >= zone.Y && point.Y <= zone.Y + zone.Height;
     }
 
     // MARK: - 皮肤
@@ -710,10 +870,12 @@ public class PetManager : INotifyPropertyChanged
         _idleCounter = baseValue * 0.6 + _rng.NextDouble() * (baseValue * 0.4);
     }
 
-    private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    /// <summary>赋值并发布变更；返回是否有实际变化（LifeState 变化时同时触发 LifeStateChanged）。</summary>
+    private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        return true;
     }
 }

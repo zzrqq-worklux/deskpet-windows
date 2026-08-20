@@ -393,7 +393,7 @@ public class PetManagerBehaviorTests
         Assert.Equal(PetMovementMode.Floor, pm.MovementMode);
         Assert.Equal(2, contacts);                         // 高速落地 → 反弹一次 → 再次落地
         Assert.True(sawBounce);
-        Assert.Equal(500.0, pm.WindowPosition!.Value.X);
+        Assert.Equal(928.0, pm.WindowPosition!.Value.X);   // LeaveHome 定位到工作区顶上方 200pt 中央（Swift 676-679）
         Assert.Equal(floorY, pm.WindowPosition!.Value.Y);  // 最终停在地面
     }
 
@@ -409,11 +409,12 @@ public class PetManagerBehaviorTests
         pm.LifeState = PetLifeState.AtHome;
         pm.LeaveHome();
 
-        for (var i = 0; i < 200; i++) pm.Tick(Dt);         // 无真实 fall 素材：动画走 idle 兜底帧，物理照常
+        for (var i = 0; i < 300; i++) pm.Tick(Dt);         // 无真实 fall 素材：动画走 idle 兜底帧，物理照常
+                                                           // （300 上限：LeaveHome 从顶+200 掉到地面含一次反弹，Swift 676-679 定位）
 
         Assert.Equal(PetAction.Idle, pm.Action);           // 兜底帧首帧即算播完 → 回 idle（Swift 同）
         Assert.Equal(PetMovementMode.Floor, pm.MovementMode);
-        Assert.Equal(500.0, pm.WindowPosition!.Value.X);
+        Assert.Equal(928.0, pm.WindowPosition!.Value.X);   // LeaveHome 定位到工作区顶上方 200pt 中央
         Assert.Equal(FloorY, pm.WindowPosition!.Value.Y);  // 已落地并静止
     }
 
