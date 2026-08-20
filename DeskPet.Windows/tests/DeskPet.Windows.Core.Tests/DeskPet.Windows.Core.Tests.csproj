@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
     <IsPackable>false</IsPackable>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -9,5 +10,6 @@
     <PackageReference Include="xunit" Version="2.*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
     <ProjectReference Include="..\..\src\DeskPet.Core\DeskPet.Core.csproj" />
+    <ProjectReference Include="..\..\src\DeskPet.Windows\DeskPet.Windows.csproj" />
   </ItemGroup>
 </Project>

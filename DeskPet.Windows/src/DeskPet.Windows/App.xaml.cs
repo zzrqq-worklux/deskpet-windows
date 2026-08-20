@@ -1,9 +1,24 @@
 using System.ComponentModel;
 using System.Windows;
+using DeskPet.Core.Services;
 using DeskPet.Windows.Services;
 using DeskPet.Windows.Views;
 
 namespace DeskPet.Windows;
+
+/// <summary>
+/// Phase 1 静态服务容器（Phase 3 再引入 DI）。
+/// </summary>
+public static class AppServices
+{
+    public static ISettingsService Settings { get; } = new JsonSettingsService();
+
+    public static IAudioService Audio { get; } = new WpfAudioService();
+
+    public static IMusicService Music { get; } = new StubMusicService();
+
+    public static IScreenInfo Screen { get; } = new WpfScreenInfo();
+}
 
 public partial class App : System.Windows.Application
 {
@@ -14,6 +29,11 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        _ = AppServices.Settings.PetScale;
+        _ = AppServices.Screen.WorkAreas;
+        _ = AppServices.Music.IsPlaying;
+        AppServices.Audio.Stop();
 
         _petWindow = new PetWindow();
         _petWindow.Closing += OnPetWindowClosing;
