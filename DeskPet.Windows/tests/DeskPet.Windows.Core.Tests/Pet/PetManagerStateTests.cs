@@ -252,6 +252,84 @@ public class PetManagerStateTests
     }
 
     [Fact]
+    public async Task Fallback_OneShotActionWithoutMaterial_AdvancesViaFallbackAction_ThenCompletes()
+    {
+        // 皮肤只有 idle（无 fall/drag）：LeaveHome → Fall 走 idle 兜底帧（Swift fallbackFrames 语义），
+        // 首帧即算播完（Swift total=0 → total-1=-1）→ 立即回 Idle
+        using var fx = new SkinFixture();
+        fx.Config("{\"fps\": 1}");
+        fx.Frames("idle_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        await WaitCacheAsync(skin, PetAction.Idle, 0);
+        var pm = NewManager(skin);
+        var seen = new List<int?>();
+        pm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(pm.CurrentFrameIndex)) seen.Add(pm.CurrentFrameIndex);
+        };
+
+        pm.LifeState = PetLifeState.AtHome;
+        pm.LeaveHome();                              // → Fall（无真实 fall 素材 → idle 兜底帧）
+        Assert.Equal(PetAction.Fall, pm.Action);
+        Assert.Null(pm.CurrentFrameIndex);
+
+        pm.Tick(1);                                  // 兜底帧推进：有帧可播 + 播完回 Idle
+        Assert.Equal(PetAction.Idle, pm.Action);
+        Assert.Equal(new int?[] { 0, null }, seen);
+    }
+
+    [Fact]
+    public async Task Fallback_LoopActionWithoutMaterial_AdvancesViaFallbackAction()
+    {
+        // 皮肤只有 idle（无 music）：Music 循环走 idle 兜底帧持续推进（Swift fallbackFrames 语义）
+        using var fx = new SkinFixture();
+        fx.Config("{\"fps\": 1}");
+        fx.Frames("idle_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        await WaitCacheAsync(skin, PetAction.Idle, 0);
+        var pm = NewManager(skin);
+        var seen = new List<int?>();
+        pm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(pm.CurrentFrameIndex)) seen.Add(pm.CurrentFrameIndex);
+        };
+
+        pm.SetAction(PetAction.Music);
+        for (var i = 0; i < 5; i++) pm.Tick(1);
+
+        Assert.Equal(PetAction.Music, pm.Action);    // 循环兜底不播完
+        // Music 无真实素材 → 用 DefaultFps=14（config.fps 只作用于素材存在的动作）→ (int)14t % 3 = 0,2,1,0,2
+        Assert.Equal(new int?[] { 0, 2, 1, 0, 2 }, seen);
+    }
+
+    [Fact]
+    public async Task Fallback_LoopAction_PrefersPrimaryFallbackAction()
+    {
+        // climb 无素材：兜底链 walk → idle，循环用 walk 的缓存帧数推进（Swift fallbackFrames: Walk ?? Idle）
+        using var fx = new SkinFixture();
+        fx.Config("{\"fps\": 1}");
+        fx.Frames("idle_0", 1);
+        fx.Frames("walk_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        await WaitCacheAsync(skin, PetAction.Idle, 0);
+        await WaitCacheAsync(skin, PetAction.Walk, 0);
+        var pm = NewManager(skin);
+        var seen = new List<int?>();
+        pm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(pm.CurrentFrameIndex)) seen.Add(pm.CurrentFrameIndex);
+        };
+
+        pm.SetAction(PetAction.Climb);
+        pm.Tick(1);
+        pm.Tick(1);
+        pm.Tick(1);
+
+        Assert.Equal(PetAction.Climb, pm.Action);    // 循环兜底不播完
+        Assert.Equal(new int?[] { 0, 1, 2 }, seen);  // walk 3 帧（若误用 idle(1 帧) 只会 0）
+    }
+
+    [Fact]
     public async Task Poke_WhenHappy_PlaysHappy_AndLowersHappiness()
     {
         using var fx = new SkinFixture();

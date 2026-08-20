@@ -167,7 +167,8 @@ public class PetManager : INotifyPropertyChanged
         // 流式补齐 skin.BackfillIfNeeded 由窗口层调用（T6，沿用 Phase 0 调用点）
 
         // 一次性动作播完 → 自然过渡（Swift 415-431）
-        if (!_loop.IsLoop && _loop.OneShotFinished)
+        // 兜底动作（无真实素材 → TotalFrames=0）：Swift total=0 → total-1=-1 → 首帧即算播完，此处等效补上
+        if (!_loop.IsLoop && (_loop.OneShotFinished || (_loop.TotalFrames == 0 && CurrentFrameIndex != null)))
         {
             if (Action == PetAction.Yawn && _pendingSleep)
             {
@@ -340,19 +341,54 @@ public class PetManager : INotifyPropertyChanged
         _loop.LoopPoint = _skin.LoopPoint(Action, _currentVariant);
     }
 
-    /// <summary>当前动作已缓存帧数（Swift frames(for:) 语义：目标变体空时用同动作首个非空变体顶替）。
-    /// CachedCount 契约（T3 决策）：逐 tick 从 skin 缓存读取，窗口层补齐（BackfillIfNeeded）后下一 tick 自动生效，
-    /// 无需窗口层回调更新。</summary>
+    /// <summary>当前动作已缓存帧数（Swift frames(for:) 语义）。CachedCount 契约（T3 决策）：逐 tick 从
+    /// skin 缓存读取，窗口层补齐（BackfillIfNeeded）后下一 tick 自动生效，无需窗口层回调更新。
+    /// 变体级：目标变体空时用同动作首个非空变体顶替；动作级：动作无真实素材时回退到兜底动作的缓存帧数
+    /// （Swift fallbackFrames 语义）——否则 HasMaterial 通过但 Cache[Action] 恒空，循环永不推进，
+    /// 如 LeaveHome 的 Fall 在无 fall 素材皮肤上不会渲染 drag/idle 兜底帧。</summary>
     private int CachedFrameCount()
     {
         lock (_skin.SyncRoot)
         {
-            if (!_skin.Cache.TryGetValue(Action, out var variants)) return 0;
-            if (_currentVariant >= 0 && _currentVariant < variants.Count && variants[_currentVariant].Count > 0)
-                return variants[_currentVariant].Count;
-            return variants.FirstOrDefault(v => v.Count > 0)?.Count ?? 0;
+            var count = CachedVariantCount(Action, _currentVariant);
+            if (count > 0) return count;
+            // 真实素材加载中：过渡帧仅来自本动作变体（Swift frames(for:) transitional 语义），不落兜底动作
+            if (_skin.HasRealMaterial(Action)) return 0;
+            return FallbackFrameCount();
         }
     }
+
+    private int CachedVariantCount(PetAction action, int variant)
+    {
+        if (!_skin.Cache.TryGetValue(action, out var variants)) return 0;
+        if (variant >= 0 && variant < variants.Count && variants[variant].Count > 0) return variants[variant].Count;
+        return variants.FirstOrDefault(v => v.Count > 0)?.Count ?? 0;
+    }
+
+    /// <summary>兜底动作的缓存帧数（首个非空变体；链与 PetSkin.HasMaterial/FallbackFramesAsync 同构，
+    /// 对应 Swift SpriteAnimator.swift fallbackFrames(for:) 594-624）。</summary>
+    private int FallbackFrameCount()
+    {
+        foreach (var fallback in FallbackActions(Action))
+        {
+            if (_skin.Cache.TryGetValue(fallback, out var variants))
+            {
+                var first = variants.FirstOrDefault(v => v.Count > 0);
+                if (first != null) return first.Count;
+            }
+        }
+        return 0;
+    }
+
+    private static IReadOnlyList<PetAction> FallbackActions(PetAction action) => action switch
+    {
+        PetAction.Music => new[] { PetAction.Idle },
+        PetAction.Climb => new[] { PetAction.Walk, PetAction.Idle },
+        PetAction.Hang or PetAction.Dizzy or PetAction.Yawn => new[] { PetAction.Idle },
+        PetAction.Fall => new[] { PetAction.Drag, PetAction.Idle },
+        PetAction.Home => new[] { PetAction.Sleep, PetAction.Idle },
+        _ => Array.Empty<PetAction>()
+    };
 
     /// <summary>随机重置待机计时（Swift 252-255；T4 行为 AI 递减使用）。</summary>
     private void ResetIdleCounter()
