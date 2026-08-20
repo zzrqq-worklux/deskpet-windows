@@ -184,7 +184,7 @@ public class PetManagerStateTests
         fx.Frames("idle_0", 5);
         var skin = (await fx.LoadAsync())!;
         await WaitCacheAsync(skin, PetAction.Idle, 0);
-        var pm = NewManager(skin);
+        var pm = NewManager(skin, rng: new Random(2));   // T4 行为 AI：第 4 tick idleCounter 归零决策；seed 2 roll=0.771≥0.42 → 继续待机，帧循环不被打断
         var seen = new List<int?>();
         pm.PropertyChanged += (_, e) =>
         {
