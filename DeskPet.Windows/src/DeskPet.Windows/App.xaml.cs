@@ -27,6 +27,7 @@ public partial class App : System.Windows.Application
     private PetWindow? _petWindow;
     private SettingsWindow? _settingsWindow;
     private TrayService? _tray;
+    private PetManager? _manager;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -43,13 +44,14 @@ public partial class App : System.Windows.Application
         _settingsWindow = new SettingsWindow();
 
         _tray = new TrayService(
-            isPetVisible: () => _petWindow?.IsVisible ?? false,
             showPet: () =>
             {
                 _petWindow?.Show();
                 _petWindow?.Activate();
             },
             hidePet: () => _petWindow?.Hide(),
+            goHome: () => _manager?.GoHome(),
+            leaveHome: () => _manager?.LeaveHome(),
             showSettings: () =>
             {
                 _settingsWindow?.Show();
@@ -82,8 +84,16 @@ public partial class App : System.Windows.Application
         if (skin != null)
         {
             manager = PetManager.Load(skin, AppServices.Settings, AppServices.Audio, AppServices.Music, AppServices.Screen);
+            // T8：托盘菜单「回窝/出窝」文字随 LifeState 切换（handler 只改文字，不读帧 — T5 LeaveHome 瞬态安全）。
+            manager.LifeStateChanged += OnManagerLifeStateChanged;
         }
+        _manager = manager;
         petWindow.Attach(skin, manager);
+    }
+
+    private void OnManagerLifeStateChanged(PetLifeState state)
+    {
+        _tray?.SetAtHome(state == PetLifeState.AtHome);
     }
 
     private void OnPetWindowClosing(object? sender, CancelEventArgs e)
