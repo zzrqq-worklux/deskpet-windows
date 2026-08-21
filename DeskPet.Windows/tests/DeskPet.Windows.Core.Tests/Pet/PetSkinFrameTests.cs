@@ -32,6 +32,16 @@ public class PetSkinFrameTests : IDisposable
         return new DecodedFrame(w, h, buf);
     }
 
+    private static DecodedFrame Downsampled(int srcW, int srcH, int bufW, int bufH, byte r, byte g, byte b)
+    {
+        var buf = new byte[bufW * bufH * 4];
+        for (var i = 0; i < buf.Length; i += 4)
+        {
+            buf[i] = r; buf[i + 1] = g; buf[i + 2] = b; buf[i + 3] = 255;
+        }
+        return new DecodedFrame(srcW, srcH, buf, bufW, bufH);
+    }
+
     private static Dictionary<string, Func<DecodedFrame?>> MapFor(string dir, params string[] rels)
     {
         var map = new Dictionary<string, Func<DecodedFrame?>>();
@@ -290,6 +300,65 @@ public class PetSkinFrameTests : IDisposable
         Assert.Equal(5, frames.Count);
 
         Assert.Equal(1, skin.LoopPoint(PetAction.Happy, 0));
+    }
+
+    [Fact]
+    public void DecodedFrame_SigDims_FallBackToOriginalWhenBufferAbsent()
+    {
+        var withoutBuffer = new DecodedFrame(262, 300, new byte[224 * 256 * 4]);
+        Assert.Equal(262, withoutBuffer.SigWidth);
+        Assert.Equal(300, withoutBuffer.SigHeight);
+
+        var withBuffer = new DecodedFrame(262, 300, new byte[224 * 256 * 4], 224, 256);
+        Assert.Equal(224, withBuffer.SigWidth);
+        Assert.Equal(256, withBuffer.SigHeight);
+    }
+
+    [Fact]
+    public async Task Signatures_DownsampledFrame_NotAllZero()
+    {
+        Mk("idle_0/1.png"); Mk("idle_0/2.png"); Mk("idle_0/3.png");
+        var map = MapFor(_dir, "idle_0/1.png", "idle_0/2.png", "idle_0/3.png");
+        map[P("idle_0/1.png")] = () => Downsampled(262, 300, 224, 256, 255, 255, 255);
+        map[P("idle_0/2.png")] = () => Downsampled(262, 300, 224, 256, 128, 200, 40);
+        map[P("idle_0/3.png")] = () => Downsampled(262, 300, 224, 256, 10, 10, 10);
+        var decoder = new FakeDecoder(map);
+        var skin = await LoadSkinAsync(_dir, decoder);
+
+        var frames = await WaitForFramesAsync(skin, PetAction.Idle);
+        Assert.Equal(3, frames.Count);
+        lock (skin.SyncRoot)
+        {
+            var sigs = skin.Signatures[PetAction.Idle][0];
+            Assert.Equal(3, sigs.Count);
+            Assert.All(sigs, s => Assert.Contains(s, v => Math.Abs(v) > 0.0001f));
+        }
+    }
+
+    [Fact]
+    public async Task LoopPoint_DownsampledWalk_ReturnsMidFrameLoop()
+    {
+        for (var i = 1; i <= 6; i++) Mk($"walk_0/{i}.png");
+        var rels = new string[6];
+        for (var i = 0; i < 6; i++) rels[i] = $"walk_0/{i + 1}.png";
+        var map = MapFor(_dir, rels);
+        map[P("walk_0/1.png")] = () => Downsampled(262, 300, 224, 256, 0, 0, 0);
+        for (var i = 2; i <= 6; i++)
+        {
+            var n = i;
+            map[P($"walk_0/{n}.png")] = () => Downsampled(262, 300, 224, 256, 255, 255, 255);
+        }
+        var decoder = new FakeDecoder(map);
+        var skin = await LoadSkinAsync(_dir, decoder);
+
+        var frames = await WaitForFramesAsync(skin, PetAction.Walk);
+        Assert.Equal(6, frames.Count);
+        lock (skin.SyncRoot)
+        {
+            var sigs = skin.Signatures[PetAction.Walk][0];
+            Assert.All(sigs, s => Assert.Contains(s, v => Math.Abs(v) > 0.0001f));
+            Assert.Equal(1, skin.LoopPoint(PetAction.Walk, 0));
+        }
     }
 
     public void Dispose() { try { Directory.Delete(_dir, true); } catch { } }

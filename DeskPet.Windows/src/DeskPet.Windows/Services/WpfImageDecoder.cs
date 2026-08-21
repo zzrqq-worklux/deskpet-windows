@@ -62,7 +62,7 @@ public sealed class WpfImageDecoder : IImageDecoder
             var rgba = bufW == srcW && bufH == srcH
                 ? BgraToRgba(bgra)
                 : BoxDownsample(bgra, srcW, srcH, bufW, bufH);
-            return new DecodedFrame(srcW, srcH, rgba);
+            return new DecodedFrame(srcW, srcH, rgba, bufW, bufH);
         }
         catch
         {

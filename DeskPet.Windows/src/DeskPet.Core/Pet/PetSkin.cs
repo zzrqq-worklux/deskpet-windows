@@ -232,7 +232,7 @@ public sealed class PetSkin
                     if (frame != null)
                     {
                         frames.Add(frame);
-                        sigs.Add(FrameSignatureComputer.Compute(frame.Rgba, frame.Width, frame.Height));
+                        sigs.Add(FrameSignatureComputer.Compute(frame.Rgba, frame.SigWidth, frame.SigHeight));
                     }
                     else
                     {
@@ -266,7 +266,7 @@ public sealed class PetSkin
                     var frame = await _decoder.DecodeAsync(url, maxPixel);
                     if (frame != null)
                     {
-                        allSigs.Add(FrameSignatureComputer.Compute(frame.Rgba, frame.Width, frame.Height));
+                        allSigs.Add(FrameSignatureComputer.Compute(frame.Rgba, frame.SigWidth, frame.SigHeight));
                         if (idx < trailerCount) trailerFrames.Add(frame);
                     }
                     else
