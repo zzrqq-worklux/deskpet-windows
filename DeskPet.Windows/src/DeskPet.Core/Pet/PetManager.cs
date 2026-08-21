@@ -12,7 +12,7 @@ internal enum PetMovementMode { Floor, Falling }
 
 /// <summary>
 /// 桌面宠物状态中枢（Swift <c>PetManager.swift</c> 移植，T5 范围：回窝/出窝流程 + 拖拽投放托盘重设计）。
-/// 走回顶部 → 淡出 → AtHome（节能 trim）；出窝从顶部上方掉落回桌面（ExitHomeOnlyMode）。
+/// 走回最近屏幕边缘（左/右/上）→ 淡出 → AtHome（节能 trim）；出窝从顶部上方掉落回桌面（ExitHomeOnlyMode）。
 /// </summary>
 public class PetManager : INotifyPropertyChanged
 {
@@ -639,8 +639,30 @@ public class PetManager : INotifyPropertyChanged
 
     // MARK: - 回窝 / 出窝（Swift 607-698）
 
-    /// <summary>走回屏幕顶部中央 → 淡出 → AtHome（Swift 610-635）。目标点=工作区顶 − 窗口高 − 4
-    /// （无物理刘海 inset 概念，直接用工作区顶，Swift 627-631）。</summary>
+    /// <summary>最近屏幕边缘回窝目标点（Windows 设计变更：不再走顶部中央，从当前坐标到最近边缘
+    /// 左/右/上 直线距离最短者）。水平距离 = 到左/右边界的 |ΔX|，垂直距离 = 到上边界 |ΔY|；
+    /// 水平更近（等距时水平优先）→ 目标 X = 边界（窗口边与边界对齐，沿用现有左下角位置语义），
+    /// Y = 当前 Y；垂直更近 → X = 当前 X，Y = 上边界 − 窗口高 − 4（沿用现有顶边公式）。
+    /// 左/右等距（水平居中）→ 取左。</summary>
+    private (double X, double Y) HomeEdgeTarget(Rect screen, (double Width, double Height) size)
+    {
+        var pos = WindowPosition ?? InitialRoamingPosition();
+        var leftX = screen.X;
+        var rightX = screen.X + screen.Width;
+        var topY = screen.Y + screen.Height;
+        var dLeft = Math.Abs(pos.X - leftX);
+        var dRight = Math.Abs(pos.X - rightX);
+        var dTop = Math.Abs(pos.Y - topY);
+        if (Math.Min(dLeft, dRight) <= dTop)
+        {
+            var x = dLeft <= dRight ? leftX : rightX - size.Width;
+            return (x, pos.Y);
+        }
+        return (pos.X, topY - size.Height - 4);
+    }
+
+    /// <summary>走回最近屏幕边缘（左/右/上）→ 淡出 → AtHome（Swift 610-635 的 Windows 重设计：
+    /// 目标点从"顶部中央"改为"距当前位置最近的屏幕边缘"，坐标对齐语义不变）。</summary>
     public void GoHome()
     {
         if (LifeState != PetLifeState.Roaming || IsDragging || _movingHome) return;
@@ -650,16 +672,14 @@ public class PetManager : INotifyPropertyChanged
         _fading = false;
         _movementMode = PetMovementMode.Floor;
         DizzyAngle = 0;
-        var size = WindowSize;
-        var target = (screen.X + screen.Width / 2 - size.Width / 2,
-                      screen.Y + screen.Height - size.Height - 4);
+        var target = HomeEdgeTarget(screen, WindowSize);
         UpdateFacing(target);
         _walkTarget = target;
         SetAction(PetAction.Walk);
     }
 
-    /// <summary>瞬间进窝：跳过走回动画，直接定位到回窝目标点并淡出（Swift 639-662）。
-    /// 用于拖拽投放场景。</summary>
+    /// <summary>瞬间进窝：跳过走回动画，直接定位到最近屏幕边缘（从当前拖拽位置计算）并淡出
+    /// （Swift 639-662 的 Windows 重设计，用于拖拽投放场景）。</summary>
     public void SnapHome()
     {
         if (LifeState != PetLifeState.Roaming || _movingHome) return;
@@ -668,9 +688,7 @@ public class PetManager : INotifyPropertyChanged
         _movingHome = true;
         _movementMode = PetMovementMode.Floor;
         DizzyAngle = 0;
-        var size = WindowSize;
-        WindowPosition = (screen.X + screen.Width / 2 - size.Width / 2,
-                          screen.Y + screen.Height - size.Height - 4);
+        WindowPosition = HomeEdgeTarget(screen, WindowSize);
         // 直接进入淡出（不经走路），BeginHomeFadeout 会设 fading=true + 切 idle
         BeginHomeFadeout();
     }

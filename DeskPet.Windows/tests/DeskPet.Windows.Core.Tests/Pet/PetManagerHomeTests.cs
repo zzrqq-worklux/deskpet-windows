@@ -17,7 +17,9 @@ namespace DeskPet.Windows.Core.Tests.Pet;
 ///   - 直接读 internal HomeOnlyMode（InternalsVisibleTo 测试钩子）；
 ///   - 行为验证：trim 后 idle 帧的加载被 HomeOnlyMode 拒绝（Loading 结束但 Cache 不写入），
 ///     home 帧仍可加载；ExitHomeOnlyMode 后 idle 帧恢复可加载。
-/// 工作区固定 1920x1080（Y=下、y 向上），窗口 64x64：回窝目标 (928, 1012)、出窝起点 (928, 1216)。
+/// 工作区固定 1920x1080（Y=下、y 向上），窗口 64x64：出窝起点 (928, 1216)。
+/// 回窝目标 = 距当前位置最近的屏幕边缘（用户设计变更）：左 (X=0)、右 (X=1920−64)、
+/// 上 (X=当前X, Y=1080−64−4)；水平==垂直等距时水平优先，左==右等距时左优先。
 /// 投放区 = 主屏工作区顶部中央 50% 宽 × 120pt 高矩形：(480, 960)-(1440, 1080)。
 /// </summary>
 public class PetManagerHomeTests
@@ -134,7 +136,7 @@ public class PetManagerHomeTests
                music ?? new FakeMusic(), screens ?? new FakeScreens(DefaultWorkArea), rng);
 
     private const double Dt = 1.0 / 60.0;
-    /// <summary>回窝目标点：工作区顶 − 窗口高 − 4（1920/2−32, 1080−64−4）。</summary>
+    /// <summary>回窝上边缘目标：工作区顶 − 窗口高 − 4（X 不变时；X=1920/2−32 → 928, 1080−64−4 → 1012）。</summary>
     private static (double X, double Y) HomeTarget => (928.0, 1012.0);
     /// <summary>出窝起点：工作区顶 + 200（1080−64+200）。</summary>
     private static (double X, double Y) LeaveStart => (928.0, 1216.0);
@@ -143,10 +145,58 @@ public class PetManagerHomeTests
     /// <summary>投放区内的点（区 = 顶部中央 50%×120pt：(480,960)-(1440,1080)）。</summary>
     private static (double X, double Y) InDropZone => (960.0, 1000.0);
 
+    // MARK: - 最近边缘目标选择（用户设计变更：回窝目标 = 距当前位置最近的屏幕边缘）
+
+    /// <summary>三个区域各取一点：左下 → 左边缘；右中 → 右边缘（窗口右边对齐右边界）；顶中 → 上边缘（X 不变）。</summary>
+    [Theory]
+    [InlineData(400.0, 300.0, 0.0, 300.0)]     // 左下区域 → 左边缘（X=0 边界，Y 不变）
+    [InlineData(1500.0, 540.0, 1856.0, 540.0)]  // 右中区域 → 右边缘（右边界 1920 − 窗口宽 64）
+    [InlineData(928.0, 1000.0, 928.0, 1012.0)]  // 顶部中央附近 → 上边缘（沿用现有顶边公式）
+    public async Task GoHome_TargetsNearestEdge(double x, double y, double tx, double ty)
+    {
+        using var fx = new SkinFixture();
+        fx.Frames("walk_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        var pm = NewManager(skin);
+        pm.SyncWindowPosition((x, y));
+
+        pm.GoHome();
+        Assert.Equal((tx, ty), pm.WalkTarget!.Value);
+        Assert.True(pm.MovingHome);
+    }
+
+    /// <summary>恰在等距（水平==垂直）→ 规定水平优先：目标 = 左边缘，Y 不变。</summary>
+    [Fact]
+    public async Task GoHome_EqualHorizontalAndVerticalDistance_PrefersHorizontalEdge()
+    {
+        using var fx = new SkinFixture();
+        fx.Frames("walk_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        var pm = NewManager(skin);
+        pm.SyncWindowPosition((400.0, 680.0));   // dLeft=400, dTop=400 → 水平优先 → 左
+
+        pm.GoHome();
+        Assert.Equal((0.0, 680.0), pm.WalkTarget!.Value);
+    }
+
+    /// <summary>恰在水平居中（左==右==上等距）→ 左优先：目标 = 左边缘。</summary>
+    [Fact]
+    public async Task GoHome_LeftRightTieAtHorizontalCenter_PrefersLeft()
+    {
+        using var fx = new SkinFixture();
+        fx.Frames("walk_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        var pm = NewManager(skin);
+        pm.SyncWindowPosition((960.0, 120.0));   // dLeft=dRight=dTop=960 → 水平优先 → 左
+
+        pm.GoHome();
+        Assert.Equal((0.0, 120.0), pm.WalkTarget!.Value);
+    }
+
     // MARK: - GoHome：走回 → 淡出 → AtHome + TrimToHomeOnly
 
     [Fact]
-    public async Task GoHome_WalksToTopCenter_FadesOut_ArrivesAtHome_TrimToHomeOnlyEffective()
+    public async Task GoHome_WalksToNearestEdge_FadesOut_ArrivesAtHome_TrimToHomeOnlyEffective()
     {
         using var fx = new SkinFixture();
         fx.Config("{\"actions\":{\"fall\":{\"fps\":1}}}");
@@ -164,8 +214,8 @@ public class PetManagerHomeTests
         Assert.Equal(PetAction.Walk, pm.Action);
         Assert.True(pm.MovingHome);
         Assert.False(pm.Fading);
-        Assert.Equal(HomeTarget, pm.WalkTarget!.Value);
-        Assert.False(pm.FacingLeft);                   // 目标在右侧 → 不朝左
+        Assert.Equal((0.0, 300.0), pm.WalkTarget!.Value);   // 距 (400,300) 最近 = 左边缘
+        Assert.True(pm.FacingLeft);                         // 目标在左侧 → 朝左
 
         var i = 0;
         while (pm.LifeState != PetLifeState.AtHome && i < 2500)
@@ -179,7 +229,7 @@ public class PetManagerHomeTests
         Assert.Equal(0.0, pm.WindowAlpha, 9);
         Assert.False(pm.MovingHome);
         Assert.False(pm.Fading);
-        Assert.Equal(HomeTarget, pm.WindowPosition!.Value);
+        Assert.Equal((0.0, 300.0), pm.WindowPosition!.Value);   // 走到左边缘后淡出进窝
 
         // TrimToHomeOnly 生效：home 帧仍可载入，idle 帧被拒绝
         Assert.True(skin.HomeOnlyMode);
@@ -207,7 +257,7 @@ public class PetManagerHomeTests
         pm.SyncWindowPosition((400.0, 300.0));
 
         pm.SnapHome();
-        Assert.Equal(HomeTarget, pm.WindowPosition!.Value);   // 瞬间定位到回窝目标点
+        Assert.Equal((0.0, 300.0), pm.WindowPosition!.Value);   // 瞬间定位到最近边缘（左）
         Assert.Equal(PetAction.Idle, pm.Action);              // beginHomeFadeout → Idle
         Assert.True(pm.MovingHome);
         Assert.True(pm.Fading);
@@ -226,6 +276,34 @@ public class PetManagerHomeTests
         Assert.Equal(PetAction.Home, pm.Action);
         Assert.Equal(0.0, pm.WindowAlpha, 9);
         Assert.True(skin.HomeOnlyMode);
+    }
+
+    // MARK: - SnapHome：直接定位到最近边缘 + 淡出
+
+    [Fact]
+    public async Task SnapHome_FromRightRegion_SnapsToRightEdge_FadesToAtHome()
+    {
+        using var fx = new SkinFixture();
+        fx.Frames("idle_0", 3);
+        fx.Frames("home_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        await WaitCacheAsync(skin, PetAction.Idle, 0);
+        var pm = NewManager(skin);
+        pm.SyncWindowPosition((1700.0, 500.0));
+
+        pm.SnapHome();
+        Assert.Equal((1856.0, 500.0), pm.WindowPosition!.Value);   // 右边界 1920 − 窗口宽 64
+        Assert.True(pm.Fading);
+
+        var i = 0;
+        while (pm.LifeState != PetLifeState.AtHome && i < 100)
+        {
+            pm.Tick(Dt);
+            i++;
+        }
+        Assert.True(i < 100, "淡出未在时限内完成");
+        Assert.Equal(PetLifeState.AtHome, pm.LifeState);
+        Assert.Equal((1856.0, 500.0), pm.WindowPosition!.Value);
     }
 
     // MARK: - LeaveHome：顶部掉落 → 落地 → Roaming + ExitHomeOnlyMode
@@ -403,7 +481,7 @@ public class PetManagerHomeTests
         Assert.True(pm.IsHoveringDropZone);
         Assert.True(pm.Fading);                               // SnapHome 已触发 → 淡出开始
         Assert.Equal(PetAction.Idle, pm.Action);
-        Assert.Equal(HomeTarget, pm.WindowPosition!.Value);
+        Assert.Equal((0.0, 500.0), pm.WindowPosition!.Value);   // 距 (500,500) 最近 = 左边缘
 
         Assert.False(pm.ExitNotchDropHover());                // 淡出未完成 → 未进窝 → false
         Assert.False(pm.IsHoveringDropZone);
