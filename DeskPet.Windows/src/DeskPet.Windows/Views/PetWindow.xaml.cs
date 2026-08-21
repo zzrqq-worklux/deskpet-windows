@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using DeskPet.Core.Pet;
 using DeskPet.Windows.Services;
@@ -69,6 +70,9 @@ public partial class PetWindow : Window
 
         _manager.PropertyChanged += OnPetPropertyChanged;
         _manager.LifeStateChanged += OnLifeStateChanged;
+
+        // 初始朝向（Swift scaleEffect(x: -1) 对应：FacingLeft=true → 水平镜像素材）
+        ApplyFacing(_manager.FacingLeft);
 
         _stopwatch.Restart();
         _timer = new DispatcherTimer { Interval = TickInterval };
@@ -142,7 +146,20 @@ public partial class PetWindow : Window
             case nameof(PetManager.CurrentFrameIndex):
                 _ = RenderCurrentFrameAsync();
                 break;
+            case nameof(PetManager.FacingLeft):
+                ApplyFacing(_manager.FacingLeft);
+                break;
         }
+    }
+
+    /// <summary>
+    /// 朝向镜像（Swift PetContentView scaleEffect(x: pet.facingLeft ? -1 : 1, y: 1, anchor: .center) 对应）：
+    /// 素材只需画一个方向（如朝右），朝左时水平翻转。RenderTransform 以元素中心为原点（XAML 已设
+    /// RenderTransformOrigin=0.5,0.5），翻转后仍保持在窗口内，不影响布局。
+    /// </summary>
+    private void ApplyFacing(bool facingLeft)
+    {
+        PetImage.RenderTransform = new ScaleTransform(facingLeft ? -1 : 1, 1);
     }
 
     /// <summary>Core 坐标（物理像素，X=窗口左缘、Y=窗口底边，y 向上、底部=0）→ WPF Left/Top（DIP，y 向下）。</summary>
