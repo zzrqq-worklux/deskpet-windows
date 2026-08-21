@@ -1,6 +1,8 @@
+using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Threading;
 using DeskPet.Core.Pet;
 using DeskPet.Windows.Services;
@@ -23,6 +25,13 @@ public partial class PetWindow : Window
     private double _dpiScale = 1.0;   // 物理像素 / WPF DIP（主屏缩放；Phase 1 单缩放假设，多屏混合 DPI 为已知限制）
     private DispatcherTimer? _timer;
     private bool _hiddenForHome;
+
+    // MARK: - 鼠标交互状态（T7：单击/双击/拖拽）
+
+    private System.Windows.Point _mouseDownClient;   // 按下时窗口客户区坐标（拖拽起点）
+    private DateTime _mouseDownTime;                 // 按下时间戳（Swift DragDetector 状态对齐；双击分类以 WPF ClickCount 为准）
+    private bool _leftDownInsideWindow;  // 本窗口内按下且未松开
+    private bool _mouseDragActive;       // 拖拽已启动（位移 ≥5px），启动后不再触发单击
 
     public PetWindow()
     {
@@ -141,6 +150,85 @@ public partial class PetWindow : Window
     {
         Left = pos.X / _dpiScale;
         Top = (VirtualBottomPx() - pos.Y) / _dpiScale - Height;
+    }
+
+    /// <summary>
+    /// WPF 窗口客户区坐标 → Core 坐标（物理像素，X=窗口左缘、Y=窗口底边，y 向上、底部=0）。
+    /// 与 <see cref="ApplyPosition"/> 同一套换算的反演：X = PointToScreen(p).X；
+    /// coreY = <see cref="VirtualBottomPx"/> − PointToScreen(p).Y
+    /// （即拖拽时窗口底边跟随光标，PointToScreen 返回设备像素、屏幕坐标原点=虚拟桌面左上）。
+    /// </summary>
+    private (double X, double Y) PointToCore(System.Windows.Point p)
+    {
+        var screen = PointToScreen(p);
+        return (screen.X, VirtualBottomPx() - screen.Y);
+    }
+
+    // MARK: - 鼠标交互（T7：单击 Poke / 双击 回窝·出窝 / 拖拽 拎起·投放）
+
+    protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonDown(e);
+        if (_manager == null || _manager.LifeState != PetLifeState.Roaming) return;
+        _mouseDownClient = e.GetPosition(this);
+        _mouseDownTime = DateTime.UtcNow;
+        _leftDownInsideWindow = true;
+        _mouseDragActive = false;
+    }
+
+    protected override void OnMouseMove(System.Windows.Input.MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (_manager == null || _manager.LifeState != PetLifeState.Roaming) return;
+        if (e.LeftButton != MouseButtonState.Pressed || !_leftDownInsideWindow) return;
+
+        var pos = e.GetPosition(this);
+        if (!_mouseDragActive)
+        {
+            // 拖拽判定先于单击判定：位移 ≥5px 才启动拖拽（Swift DragDetector 语义），否则视为待定点击
+            if (!PetInteractionClassifier.IsDragGesture(
+                    (_mouseDownClient.X, _mouseDownClient.Y), (pos.X, pos.Y),
+                    PetInteractionClassifier.DefaultDragThresholdPx)) return;
+            _manager.StartDrag();
+            _mouseDragActive = true;
+            CaptureMouse();   // 捕获后窗口在光标移出边界时仍持续收到 MouseMove
+        }
+
+        var core = PointToCore(pos);
+        _manager.SyncWindowPosition(core);
+        _manager.EvaluateNotchDropHover(core);
+    }
+
+    protected override void OnMouseLeftButtonUp(System.Windows.Input.MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonUp(e);
+        if (_manager == null) return;
+
+        if (_mouseDragActive)
+        {
+            // 拖拽优先：先问投放区，已进窝则跳过落地动画（EndDrag）
+            var droppedHome = _manager.ExitNotchDropHover();
+            if (!droppedHome) _manager.EndDrag();
+            _mouseDragActive = false;
+            _leftDownInsideWindow = false;
+            ReleaseMouseCapture();
+            return;
+        }
+
+        if (!_leftDownInsideWindow) return;
+        _leftDownInsideWindow = false;
+
+        var kind = PetInteractionClassifier.Classify(e.ClickCount, isDragging: false);
+        switch (kind)
+        {
+            case ClickKind.Single:
+                _manager.Poke();
+                break;
+            case ClickKind.Double:
+                if (_manager.LifeState == PetLifeState.Roaming) _manager.GoHome();
+                else _manager.LeaveHome();
+                break;
+        }
     }
 
     private async Task RenderCurrentFrameAsync()
