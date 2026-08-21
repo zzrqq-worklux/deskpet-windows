@@ -2,26 +2,30 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 建立 `DeskPet.Windows/` WinUI 3 解决方案并跑通最小闭环：应用启动 → 无边框透明置顶窗口 → 加载内置 BoringPet 素材 → 逐帧播放 idle 动画。Core 层（可单测的纯逻辑）骨架与帧管线就位，为 Phase 1（宠物核心逻辑）打底。
+> 技术栈裁决（2026-08-19）：WinUI 3 → WPF（本机无管理员，VS Build Tools 不可安装）；本计划按裁决更新为 WPF。
 
-**Architecture:** 三层分层 — `DeskPet.Core`（net8.0 纯类库，零 WinUI 依赖，xUnit 单测）、`DeskPet.Windows`（WinUI 3 应用：Services 平台实现 + ViewModels + Views）、`tests/`（xUnit 测试项目）。帧引擎按 Swift `SpriteAnimator.swift` 移植：`IImageDecoder` 注入 + `PetSkin` 帧缓存（部分帧预缓存 / 流式补齐 / loopPoint 无缝循环 / 回窝节能）。
+**Goal:** 建立 `DeskPet.Windows/` WPF 解决方案并跑通最小闭环：应用启动 → 无边框透明置顶窗口 → 加载内置 BoringPet 素材 → 逐帧播放 idle 动画。Core 层（可单测的纯逻辑）骨架与帧管线就位，为 Phase 1（宠物核心逻辑）打底。
 
-**Tech Stack:** .NET 8 LTS、Windows App SDK 1.6.x（WinUI 3）、xUnit、CommunityToolkit.Mvvm、System.Text.Json；解码用 Windows.Graphics.Imaging (WIC)。
+**Architecture:** 三层分层 — `DeskPet.Core`（net8.0 纯类库，零 UI 框架依赖，xUnit 单测）、`DeskPet.Windows`（WPF 应用：Services 平台实现 + ViewModels + Views）、`tests/`（xUnit 测试项目）。帧引擎按 Swift `SpriteAnimator.swift` 移植：`IImageDecoder` 注入 + `PetSkin` 帧缓存（部分帧预缓存 / 流式补齐 / loopPoint 无缝循环 / 回窝节能）。
+
+**Tech Stack:** .NET 8 LTS、WPF（.NET 内置，纯 dotnet CLI 构建，无需 Visual Studio / VS Build Tools）、xUnit、CommunityToolkit.Mvvm、System.Text.Json；解码用 WPF `System.Windows.Media.Imaging.BitmapDecoder`。
 
 **Spec:** `docs/superpowers/specs/2026-08-19-windows-port-selection.md`
 
 ## Global Constraints
 
-- .NET 8 LTS；Windows App SDK 1.6.x；`WindowsPackageType=None` + `WindowsAppSDKSelfContained=true`（免安装便携版，输出可拷贝目录）。
-- `DeskPet.Core` 只依赖 BCL + `System.Text.Json`，禁止引用 WinUI/WPF/WinForms（保证单测可跑）。
+- .NET 8 LTS；WPF（`UseWPF=true`）应用；纯 dotnet CLI 构建（本机无管理员、VS Build Tools 不可安装）；框架依赖输出即可拷贝运行，无需 WindowsAppSDK 的免安装打包属性。
+- `DeskPet.Core` 只依赖 BCL + `System.Text.Json`，禁止引用 WPF/WinForms（保证单测可跑）。
 - 项目/命名/文件夹与 Swift 源码保持同名对应（`PetSkin`/`PetManager`/`PetAction`…），便于逐行对照移植。
 - 内置素材：从 macOS 版 `deskpet/BoringPet/` 拷贝到 `DeskPet.Windows/assets/BoringPet/`（本分支 macOS 源码保留原样）。
 - 工程目录均在 `DeskPet.Windows/` 下，与 macOS 源码隔离。
 - 许可：继承 GPLv3。
 
+> WPF 工程布局与 WinUI 3 不同：无 `WindowsPackageType`/`WindowsAppSDKSelfContained` 属性、无 `Microsoft.WindowsAppSDK`/`Microsoft.Windows.SDK.BuildTools` 包引用，csproj 用 `UseWPF=true`（+ 托盘所需的 `UseWindowsForms=true`）；`app.manifest` 非必需，仅本项目保留它声明 `PerMonitorV2` DPI。App 为 `System.Windows.Application`，窗口为 WPF `Window`。
+
 ---
 
-### Task 1: 解决方案脚手架（WinUI 3 免安装工程）
+### Task 1: 解决方案脚手架（WPF 工程）
 
 **Files:**
 - Create: `DeskPet.Windows/DeskPet.Windows.sln`
@@ -55,37 +59,32 @@ Copy-Item -Recurse "deskpet/BoringPet" "DeskPet.Windows/assets/BoringPet"
 </Project>
 ```
 
-- [ ] **Step 3: 创建 WinUI 3 应用项目（免安装自包含）**
+- [ ] **Step 3: 创建 WPF 应用项目**
 
-`DeskPet.Windows/src/DeskPet.Windows/DeskPet.Windows.csproj`（关键属性：`WindowsPackageType=None`、`WindowsAppSDKSelfContained=true`）:
+`DeskPet.Windows/src/DeskPet.Windows/DeskPet.Windows.csproj`（关键属性：`UseWPF=true`、`UseWindowsForms=true`（托盘用）、无 WindowsAppSDK 包）:
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
-    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <RootNamespace>DeskPet.Windows</RootNamespace>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Platforms>x86;x64;ARM64</Platforms>
-    <RuntimeIdentifiers>win-x64;win-x86;win-arm64</RuntimeIdentifiers>
-    <UseWinUI>true</UseWinUI>
-    <WindowsPackageType>None</WindowsPackageType>
-    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.*" />
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.*" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
     <ProjectReference Include="..\DeskPet.Core\DeskPet.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\assets\BoringPet\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="All" />
+    <Content Include="..\..\assets\BoringPet\**" Link="assets/BoringPet/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="All" />
   </ItemGroup>
 </Project>
 ```
 
-`App.xaml.cs` 里用 `Microsoft.UI.Xaml.Application` + 创建 `MainWindow`（初始显示一个 `TextBlock`，Task 7 换成宠物窗口）。`app.manifest` 声明 `dpiAware` + `PerMonitorV2`。
+`App.xaml.cs` 里用 `System.Windows.Application`（`ShutdownMode="OnExplicitShutdown"`）+ 创建 `MainWindow`（初始显示一个 `TextBlock`，Task 7 换成宠物窗口）。`app.manifest` 可选，本项目保留它声明 `dpiAwareness=PerMonitorV2`。
 
 - [ ] **Step 4: 创建测试项目**
 
@@ -93,7 +92,8 @@ Copy-Item -Recurse "deskpet/BoringPet" "DeskPet.Windows/assets/BoringPet"
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
     <IsPackable>false</IsPackable>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -102,6 +102,7 @@ Copy-Item -Recurse "deskpet/BoringPet" "DeskPet.Windows/assets/BoringPet"
     <PackageReference Include="xunit" Version="2.*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
     <ProjectReference Include="..\..\src\DeskPet.Core\DeskPet.Core.csproj" />
+    <ProjectReference Include="..\..\src\DeskPet.Windows\DeskPet.Windows.csproj" />
   </ItemGroup>
 </Project>
 ```
@@ -125,7 +126,7 @@ Expected: 构建成功、冒烟测试 PASS、应用启动显示窗口。
 
 ```bash
 git add DeskPet.Windows docs
-git commit -m "feat(windows): scaffold WinUI 3 solution with Core/test projects"
+git commit -m "feat(windows): scaffold WPF solution with Core/test projects"
 ```
 
 ---
@@ -503,33 +504,33 @@ git commit -m "feat(core): port PetSkin frame engine with cache/prefetch/backfil
 
 ---
 
-### Task 7: 应用 — WIC 解码器 + 透明置顶宠物窗口 + idle 循环
+### Task 7: 应用 — WPF 解码器 + 透明置顶宠物窗口 + idle 循环
 
 **Files:**
-- Create: `DeskPet.Windows/src/DeskPet.Windows/Services/WicImageDecoder.cs`
+- Create: `DeskPet.Windows/src/DeskPet.Windows/Services/WpfImageDecoder.cs`
 - Create: `DeskPet.Windows/src/DeskPet.Windows/Views/PetWindow.xaml` + `PetWindow.xaml.cs`
 - Modify: `DeskPet.Windows/src/DeskPet.Windows/App.xaml.cs`（启动宠物窗口）
 - Create: `DeskPet.Windows/src/DeskPet.Core/Pet/PetAnimationLoop.cs`（可单测的帧推进器：给定 action/fps/loopPoint，60fps tick 返回当前帧索引，照 `PetManager.animTick` 帧推进部分）
 
 **Interfaces:**
 - Consumes: `PetSkin`（T6）。
-- Produces: 运行态：无边框透明置顶窗口展示 `DecodedFrame`（RGBA → `SoftwareBitmap`/`WriteableBitmap`）；`PetAnimationLoop` 驱动 idle 循环；`WicImageDecoder` 为 `IImageDecoder` 的 WIC 实现。
+- Produces: 运行态：无边框透明置顶窗口展示 `DecodedFrame`（RGBA → `BitmapSource`）；`PetAnimationLoop` 驱动 idle 循环；`WpfImageDecoder` 为 `IImageDecoder` 的 WPF 实现。
 
 - [ ] **Step 1: TDD — PetAnimationLoop 帧推进器**
 
 `PetAnimationLoopTests.cs`：循环动作（按 loopPoint 无缝循环）、一次性动作（播完停末帧）、fps 换算。先红后绿。
 
-- [ ] **Step 2: 实现 WicImageDecoder**
+- [ ] **Step 2: 实现 WpfImageDecoder**
 
-用 `Windows.Graphics.Imaging.BitmapDecoder` 异步解码 PNG，按 `maxPixel` 降采样到 `SoftwareBitmap`，转 `byte[] RGBA`（`BitmapPixelFormat.Rgba8` + `BitmapAlphaMode.Premultiplied`，读像素到 buffer）。
+用 `System.Windows.Media.Imaging.BitmapDecoder` 在后台线程解码 PNG/JPG，按 `maxPixel` 降采样，转 `byte[] RGBA`（长边 ≤ maxPixel，`WpfImageDecoder.BufferDims` 保证确定性）；`ToBitmapSource` 做 RGBA→BGRA 交换生成冻结的 `BitmapSource` 供 WPF `Image` 绑定。
 
 - [ ] **Step 3: 实现 PetWindow（无边框透明置顶）**
 
 ```csharp
-// MainWindow/PetWindow: AppWindow.OverlappedPresenter.IsAlwaysOnTop = true;
-// WindowChrome: ExtendsContentIntoTitleBar, 隐藏标题栏；背景 Transparent（WS_EX_LAYERED 语义 via WinUI）
-// Image 控件绑定当前帧 WriteableBitmap
-// 60fps DispatcherQueueTimer 驱动 PetAnimationLoop + PetSkin.FramesAsync 取帧
+// PetWindow: WPF Window，属性 WindowStyle=None、AllowsTransparency=True、
+// Background=Transparent、Topmost=True、ShowInTaskbar=False、ResizeMode=NoResize
+// Image 控件绑定当前帧 BitmapSource；加载失败显示占位提示
+// 60fps DispatcherTimer（~16ms）驱动 PetAnimationLoop + PetSkin.FramesAsync 取帧
 ```
 
 - [ ] **Step 4: 构建运行验证**
@@ -541,25 +542,25 @@ Expected: 桌面出现透明置顶宠物，播放 idle 待机动画（对应素�
 
 ```bash
 git add -A
-git commit -m "feat(windows): pet window with WIC decoder and idle animation loop"
+git commit -m "feat(windows): pet window with WPF decoder and idle animation loop"
 ```
 
 ---
 
-### Task 8: 应用外壳 — 托盘占位 + 设置页占位
+### Task 8: 应用外壳 — 托盘 + 设置窗口占位
 
 **Files:**
 - Create: `DeskPet.Windows/src/DeskPet.Windows/Services/TrayService.cs`
-- Create: `DeskPet.Windows/src/DeskPet.Windows/Views/SettingsPage.xaml` + `SettingsPage.xaml.cs`
-- Modify: `App.xaml.cs`（初始化托盘，托盘项：显示/隐藏/设置/退出）
+- Create: `DeskPet.Windows/src/DeskPet.Windows/Views/SettingsWindow.xaml` + `SettingsWindow.xaml.cs`
+- Modify: `App.xaml.cs`（初始化托盘，托盘项：显示/隐藏、回窝/出窝、设置/退出）
 
 **Interfaces:**
 - Consumes: `PetWindow`（T7）。
-- Produces: `TrayService`（`NotifyIcon` 包装：单击显示/隐藏宠物、右键菜单含"设置/退出"）；`SettingsPage` 占位页（仅导航框架，Phase 3 填充）。
+- Produces: `TrayService`（`System.Windows.Forms.NotifyIcon` 包装：单击显示/隐藏宠物、右键菜单含"回窝/出窝/设置/退出"，文字随 `PetLifeState` 切换）；`SettingsWindow` 占位窗口（左栏导航 + 右栏内容，Phase 3 填充）。
 
-- [ ] **Step 1: 实现 TrayService**（`System.Windows.Forms.NotifyIcon` 混用；图标用内置素材 `home` 帧或应用资源）
+- [ ] **Step 1: 实现 TrayService**（`System.Windows.Forms.NotifyIcon` 混用（csproj 已开 `UseWindowsForms=true`）；图标用内置素材 `home` 帧或应用资源）
 
-- [ ] **Step 2: 实现 SettingsPage 占位 + 导航**（`NavigationView` 或 `Frame`，含"宠物/聊天/设置"占位项）
+- [ ] **Step 2: 实现 SettingsWindow 占位**（WPF `Window`，左侧"宠物/聊天/设置"占位项，右侧页面内容占位）
 
 - [ ] **Step 3: 构建运行验证** — 托盘图标出现，菜单可用，隐藏/显示宠物窗口正常。
 
@@ -587,7 +588,7 @@ git commit -m "feat(windows): tray service and settings placeholder"
 - 无 TBD/TODO；每个 Task 有具体文件、测试断言、实现要点或命令。Task 5/6 的"逐行翻译"以 Swift 源文件为参照（路径在 spec 中给出），非占位。
 
 **3. 类型一致性**
-- `PetAction` 在 T2 定义，T3 配置、T4 扫描、T6 PetSkin 均消费同一枚举；`IImageDecoder`/`DecodedFrame` 在 T6 定义，T7 WIC 实现、T6 FakeDecoder 测试，签名一致。`PetSkin` 成员签名在 T6 Produces 中固定，T7/T8 仅按此使用。
+- `PetAction` 在 T2 定义，T3 配置、T4 扫描、T6 PetSkin 均消费同一枚举；`IImageDecoder`/`DecodedFrame` 在 T6 定义，T7 WPF 实现、T6 FakeDecoder 测试，签名一致。`PetSkin` 成员签名在 T6 Produces 中固定，T7/T8 仅按此使用。
 - `PetAnimationLoop`（T7）不依赖 `PetSkin` 内部状态，接口清晰。
 
 **待跟进（Phase 1 计划）**：`PetManager` 状态机/行为 AI、`windowPosition` 驱动窗口、单击/双击/拖拽交互、回窝（托盘）流程 — 属 Phase 1，独立计划。
