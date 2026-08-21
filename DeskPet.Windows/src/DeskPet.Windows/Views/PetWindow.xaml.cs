@@ -231,6 +231,39 @@ public partial class PetWindow : Window
         }
     }
 
+    // MARK: - 捕获丢失兜底（fix round：拖拽收尾）
+
+    /// <summary>
+    /// 捕获丢失收尾：拖拽中窗口被隐藏（如拖进投放区后淡出回窝完成 → AtHome → Hide()，
+    /// 隐藏持有捕获的窗口会释放捕获，后续 MouseUp 不再到达本窗口）、捕获被系统/其他窗口抢占
+    /// （Alt+Tab 等）时，MouseUp 永远不来 → 若不在此收尾，manager.IsDragging 永久置位，
+    /// Poke/Pet/GoHome/StartDrag 全部 no-op，宠物冻结直至重启。
+    /// 语义与正常松手一致：先问投放区（已进窝 → 跳过 EndDrag，IsDragging 保持=已回家），
+    /// 否则 EndDrag 落地。
+    /// </summary>
+    protected override void OnLostMouseCapture(System.Windows.Input.MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        FinishDragOnCaptureLoss();
+    }
+
+    /// <summary>失焦兜底：LostMouseCapture 之外的失焦路径（如仅键盘焦点被夺走）。
+    /// 与 OnLostMouseCapture 共用收尾，守卫幂等——两条都触发时只收尾一次。</summary>
+    protected override void OnLostFocus(RoutedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        FinishDragOnCaptureLoss();
+    }
+
+    private void FinishDragOnCaptureLoss()
+    {
+        if (_manager == null || !_mouseDragActive) return;
+        var droppedHome = _manager.ExitNotchDropHover();
+        if (!droppedHome) _manager.EndDrag();
+        _mouseDragActive = false;
+        _leftDownInsideWindow = false;
+    }
+
     private async Task RenderCurrentFrameAsync()
     {
         if (_skin == null || _manager == null) return;
