@@ -318,6 +318,14 @@ public class PetManager : INotifyPropertyChanged
             return;
         }
         _loop.CachedCount = CachedFrameCount();
+        // 按需重载（Swift frames(for:) 即加载触发点）：真实素材缓存被逐出（如睡眠预取把 Prefetched
+        // 替换为 {Sleep} 后，Evict 清掉正在播放的 Yawn）→ CachedCount=0 且 Advance 不再推进
+        // （OneShotFinished 永不置位 → 动作永久卡死；backfill 也被 PartialLoaded 拦截）→
+        // 逐 tick 触发 FramesAsync 重新加载，加载落地后帧循环自动恢复衔接。
+        if (_loop.CachedCount == 0 && _skin.HasRealMaterial(Action))
+        {
+            _ = _skin.FramesAsync(Action, _currentVariant);
+        }
         _loop.LoopPoint = _skin.LoopPoint(Action, _currentVariant);   // 签名加载完成后才可用，逐 tick 读取
         var changed = _loop.Advance(dt);
         if (changed) CurrentFrameIndex = _loop.CurrentIndex;

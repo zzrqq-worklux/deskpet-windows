@@ -254,6 +254,62 @@ public class PetManagerBehaviorTests
     }
 
     [Fact]
+    public async Task SleepPath_YawnCacheEvictedBySleepPrefetch_ReloadsOnDemand_AndTransitionsToSleep()
+    {
+        // 回归：睡眠预取（Prefetch({Sleep})）替换 Prefetched 集合后，Sleep 帧落地触发 Evict
+        // 把正在播放的 Yawn 逐出缓存 → CachedFrameCount=0（有真实素材不落兜底）→ 循环永不推进
+        // → 哈欠永不播完 → 永久卡死（无任何重载触发，backfill 也被 PartialLoaded 拦截）。
+        // 修复：Tick 帧路径按需重载（FramesAsync 触发 StartLoad），动画恢复后自然过渡到 Sleep。
+        using var fx = new SkinFixture();
+        fx.Config("{\"actions\":{\"yawn\":{\"fps\":1}}}");
+        fx.Frames("idle_0", 3);
+        fx.Frames("yawn_0", 5);
+        fx.Frames("sleep_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        await WaitCacheAsync(skin, PetAction.Idle, 0);
+        await WaitCacheAsync(skin, PetAction.Yawn, 0);    // sleep 不预载：由 SetAction(Yawn) 的 Prefetch({Sleep}) 自然加载
+        var pm = NewManager(skin, rng: new Random(1));    // sad → roll 0.249 < 0.30 → startSleeping
+        pm.Happiness = 10;
+
+        Decide(pm);                                       // 第 4 tick：StartSleeping → Yawn + pendingSleep + Prefetch({Sleep})
+        Assert.Equal(PetAction.Yawn, pm.Action);
+
+        // 睡眠预取帧后台落地 → StorePartialLoaded(Sleep) → Evict：keep=core∪{Sleep}∪{Sleep}，
+        // Yawn ∉ keep → Cache[Yawn] 被逐出（bug 触发点）。等待其自然发生。
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < 5000 && HasCached(skin, PetAction.Yawn, 0)) await Task.Delay(10);
+        Assert.False(HasCached(skin, PetAction.Yawn, 0), "前置条件：Yawn 缓存应已被 Evict 逐出");
+
+        // 修复后：Tick 帧路径发现真实素材缓存被逐出 → 按需重载（FramesAsync 触发 StartLoad）。
+        // 修复前：无任何加载触发 → 卡死在 Yawn（下方 reloaded 断言即失败）。
+        pm.Tick(Dt);                                      // 触发按需重载
+        var sw2 = Stopwatch.StartNew();
+        while (sw2.ElapsedMilliseconds < 5000 && !HasCached(skin, PetAction.Yawn, 0)) await Task.Delay(10);
+        Assert.True(HasCached(skin, PetAction.Yawn, 0), "被逐出的 Yawn 未按需重载（动画永久卡死）");
+
+        // 缓存已恢复：同步推进 → 帧恢复发布 → 哈欠播完 → 自然过渡到 Sleep
+        var sawFrameIndex = false;
+        var i = 0;
+        while (pm.Action != PetAction.Sleep && i < 2000)
+        {
+            pm.Tick(Dt);
+            if (pm.CurrentFrameIndex != null) sawFrameIndex = true;
+            i++;
+        }
+        Assert.True(sawFrameIndex, "Yawn 重载后帧未恢复推进");
+        Assert.Equal(PetAction.Sleep, pm.Action);         // 哈欠播完 → 入睡（不再卡在 Yawn）
+    }
+
+    private static bool HasCached(PetSkin skin, PetAction action, int variant)
+    {
+        lock (skin.SyncRoot)
+        {
+            return skin.Cache.TryGetValue(action, out var variants)
+                && variant >= 0 && variant < variants.Count && variants[variant].Count > 0;
+        }
+    }
+
+    [Fact]
     public async Task BehaviorAI_Sad_Hurts()
     {
         using var fx = new SkinFixture();
