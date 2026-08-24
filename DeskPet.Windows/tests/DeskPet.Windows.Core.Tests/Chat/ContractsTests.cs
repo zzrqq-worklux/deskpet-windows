@@ -76,15 +76,15 @@ public class ContractsTests
         var chat = new FakeChatClient();
         var embedding = new FakeEmbeddingService();
 
-        var reported = new List<string>();
+        var progress = new ListProgress();
         var reply = await chat.StreamChatAsync(
             new[] { new ChatMessage(Guid.NewGuid(), ChatRole.User, "hi", IsStreaming: false) },
             "hi",
-            new Progress<string>(reported.Add),
+            progress,
             CancellationToken.None);
 
         Assert.Equal("pong", reply);
-        Assert.Contains("pong", reported);
+        Assert.Contains("pong", progress.Reported);
 
         var vectors = await embedding.EmbedAsync(new[] { "a", "b" }, CancellationToken.None);
         Assert.Equal(2, vectors.Count);
@@ -109,6 +109,13 @@ public class ContractsTests
         public int BubbleMaxLength { get; set; } = 120;
         public string EmbeddingModel { get; set; } = "";
         public bool RagEnabled { get; set; }
+    }
+
+    private sealed class ListProgress : IProgress<string>
+    {
+        public List<string> Reported { get; } = new();
+
+        public void Report(string value) => Reported.Add(value);
     }
 
     private sealed class FakeChatClient : IChatClient
