@@ -66,6 +66,66 @@ public sealed class JsonSettingsService : ISettingsService
         set { Set(d => d.SkinDirectory = value ?? ""); }
     }
 
+    public bool ChatEnabled
+    {
+        get { lock (_lock) return _data.ChatEnabled; }
+        set { Set(d => d.ChatEnabled = value); }
+    }
+
+    public string ChatBaseUrl
+    {
+        get { lock (_lock) return _data.ChatBaseUrl; }
+        set { Set(d => d.ChatBaseUrl = value ?? ""); }
+    }
+
+    public string ChatApiKey
+    {
+        get { lock (_lock) return _data.ChatApiKey; }
+        set { Set(d => d.ChatApiKey = value ?? ""); }
+    }
+
+    public string ChatModel
+    {
+        get { lock (_lock) return _data.ChatModel; }
+        set { Set(d => d.ChatModel = value ?? ""); }
+    }
+
+    public string ChatSystemPrompt
+    {
+        get { lock (_lock) return _data.ChatSystemPrompt; }
+        set { Set(d => d.ChatSystemPrompt = value ?? ""); }
+    }
+
+    public int ChatHistoryCount
+    {
+        get { lock (_lock) return _data.ChatHistoryCount; }
+        set { Set(d => d.ChatHistoryCount = value); }
+    }
+
+    public double BubbleIntervalSeconds
+    {
+        get { lock (_lock) return _data.BubbleIntervalSeconds; }
+        set { Set(d => d.BubbleIntervalSeconds = value); }
+    }
+
+    public int BubbleMaxLength
+    {
+        get { lock (_lock) return _data.BubbleMaxLength; }
+        set { Set(d => d.BubbleMaxLength = value); }
+    }
+
+    public string EmbeddingModel
+    {
+        get { lock (_lock) return _data.EmbeddingModel; }
+        set { Set(d => d.EmbeddingModel = value ?? ""); }
+    }
+
+    public bool RagEnabled
+    {
+        get { lock (_lock) return _data.RagEnabled; }
+        set { Set(d => d.RagEnabled = value); }
+    }
+
     private void Set(Action<SettingsData> mutate)
     {
         lock (_lock)
@@ -114,5 +174,15 @@ public sealed class JsonSettingsService : ISettingsService
         public double SoundVolume { get; set; } = 1.0;
         public bool MusicDance { get; set; }
         public string SkinDirectory { get; set; } = "";
+        public bool ChatEnabled { get; set; }
+        public string ChatBaseUrl { get; set; } = "";
+        public string ChatApiKey { get; set; } = "";
+        public string ChatModel { get; set; } = "";
+        public string ChatSystemPrompt { get; set; } = ISettingsService.DefaultChatSystemPrompt;
+        public int ChatHistoryCount { get; set; } = 20;
+        public double BubbleIntervalSeconds { get; set; } = 120;
+        public int BubbleMaxLength { get; set; } = 120;
+        public string EmbeddingModel { get; set; } = "";
+        public bool RagEnabled { get; set; }
     }
 }

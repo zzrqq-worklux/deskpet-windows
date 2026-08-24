@@ -73,6 +73,16 @@ public class PetWindowDragCaptureLossTests
         public double SoundVolume { get; set; } = 0.8;
         public bool MusicDance { get; set; }
         public string SkinDirectory { get; set; } = "";
+        public bool ChatEnabled { get; set; }
+        public string ChatBaseUrl { get; set; } = "";
+        public string ChatApiKey { get; set; } = "";
+        public string ChatModel { get; set; } = "";
+        public string ChatSystemPrompt { get; set; } = ISettingsService.DefaultChatSystemPrompt;
+        public int ChatHistoryCount { get; set; } = 20;
+        public double BubbleIntervalSeconds { get; set; } = 120;
+        public int BubbleMaxLength { get; set; } = 120;
+        public string EmbeddingModel { get; set; } = "";
+        public bool RagEnabled { get; set; }
     }
 
     private sealed class FakeAudio : IAudioService
