@@ -114,8 +114,6 @@ public class PetManager : INotifyPropertyChanged
     /// <summary>待机剩余秒数（行为 AI 递减；归零触发 decideNextBehavior；EndDrag 重置）。</summary>
     private double _idleCounter = 4;
     private PetMovementMode _movementMode = PetMovementMode.Floor;
-    /// <summary>生命周期标记（Swift start/stop 的计时器由窗口层持有，T6；Core 不建计时器）。</summary>
-    private bool _running;
     /// <summary>回窝中（走回/淡出阶段；Swift movingHome，isHomeTransitioning 对应）。</summary>
     private bool _movingHome;
     /// <summary>淡出（回窝）/淡入（被打断的淡出恢复）进行中（Swift fading）。</summary>
@@ -176,12 +174,10 @@ public class PetManager : INotifyPropertyChanged
     public void Start()
     {
         // 生命周期标记：60fps 动画计时器由窗口层持有（T6），Core 的 Start/Stop 仅作标记。
-        _running = true;
     }
 
     public void Stop()
     {
-        _running = false;
     }
 
     // MARK: - 每帧推进（Swift animTick 259-447）

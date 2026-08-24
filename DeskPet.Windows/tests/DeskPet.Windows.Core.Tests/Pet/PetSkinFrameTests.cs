@@ -170,7 +170,7 @@ public class PetSkinFrameTests : IDisposable
         lock (skin.SyncRoot)
         {
             Assert.Equal(24, skin.Cache[PetAction.Music][0].Count);
-            Assert.True(skin.PartialLoaded.Contains("music_0"));
+            Assert.Contains("music_0", skin.PartialLoaded);
         }
         Assert.Equal(40, skin.TotalFrameCount(PetAction.Music, 0));
     }
@@ -276,7 +276,7 @@ public class PetSkinFrameTests : IDisposable
         var homeFrames = await WaitForFramesAsync(skin, PetAction.Home);
         var sleepFrames = await WaitForFramesAsync(skin, PetAction.Sleep);
 
-        Assert.Equal(1, homeFrames.Count);
+        Assert.Single(homeFrames);
         Assert.Same(sleepFrames[2], homeFrames[0]);
 
         lock (skin.SyncRoot)

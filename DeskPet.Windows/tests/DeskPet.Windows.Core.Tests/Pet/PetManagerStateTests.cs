@@ -518,7 +518,7 @@ public class PetManagerStateTests
         await WaitCacheAsync(skin2, PetAction.Idle, 0);
 
         var providerResult = skin2;
-        var pm = NewManager(skin1, reloadSkin: () => Task.FromResult(providerResult));
+        var pm = NewManager(skin1, reloadSkin: () => Task.FromResult<PetSkin?>(providerResult));
 
         pm.SetAction(PetAction.Happy);               // 先切走再切回，触发变体选择
         pm.SetAction(PetAction.Idle);

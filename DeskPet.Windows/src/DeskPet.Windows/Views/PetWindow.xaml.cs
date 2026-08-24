@@ -56,7 +56,7 @@ public partial class PetWindow : Window
         }
 
         _maxPixel = _skin.MaxPixelSize;
-        _dpiScale = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width / SystemParameters.PrimaryScreenWidth;
+        _dpiScale = System.Windows.Forms.Screen.PrimaryScreen!.Bounds.Width / SystemParameters.PrimaryScreenWidth;
         if (_dpiScale <= 0) _dpiScale = 1.0;
         var (baseWidth, baseHeight) = _skin.BaseFrameSize ?? (300, 300);
         Width = baseWidth * AppServices.Settings.PetScale / _dpiScale;
@@ -213,7 +213,7 @@ public partial class PetWindow : Window
             case ClickKind.Double:
                 Debug.WriteLine("[DCLK] -> Double (GoHome/LeaveHome)");
                 CancelPendingSingle();
-                if (_manager.LifeState == PetLifeState.Roaming) _manager.GoHome();
+                if (_manager!.LifeState == PetLifeState.Roaming) _manager.GoHome();
                 else _manager.LeaveHome();
                 break;
             case ClickKind.Single:

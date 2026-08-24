@@ -28,7 +28,7 @@ public class SkinDirectoryScannerTests : IDisposable
     {
         Mk("walk_0/1.png"); Mk("walk_0/sound.m4a");
         var r = SkinDirectoryScanner.Scan(_dir);
-        Assert.True(r.Sounds[PetAction.Walk].EndsWith("sound.m4a"));
+        Assert.EndsWith("sound.m4a", r.Sounds[PetAction.Walk]);
     }
     [Fact]
     public void Scan_Empty_Dir_Returns_Empty() => Assert.Empty(SkinDirectoryScanner.Scan(_dir).VariantUrls);

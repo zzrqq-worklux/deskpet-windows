@@ -183,8 +183,8 @@ public class PetSkinBackfillTests : IDisposable
         lock (skin.SyncRoot)
         {
             Assert.Equal(24, skin.Cache[PetAction.Walk][0].Count);
-            Assert.False(skin.Backfilling.Contains("walk_0"));
-            Assert.True(skin.PartialLoaded.Contains("walk_0"));
+            Assert.DoesNotContain("walk_0", skin.Backfilling);
+            Assert.Contains("walk_0", skin.PartialLoaded);
         }
     }
 
@@ -205,7 +205,7 @@ public class PetSkinBackfillTests : IDisposable
         lock (skin.SyncRoot)
         {
             Assert.False(skin.Cache.ContainsKey(PetAction.Walk));
-            Assert.True(skin.PartialLoaded.Contains("walk_0"));
+            Assert.Contains("walk_0", skin.PartialLoaded);
         }
 
         var frames = await WaitForFramesAsync(skin, PetAction.Walk, 0);
@@ -244,9 +244,9 @@ public class PetSkinBackfillTests : IDisposable
         {
             Assert.Contains(PetAction.Idle, skin.Played);
             Assert.Equal(24, skin.Cache[PetAction.Walk][0].Count);
-            Assert.True(skin.PartialLoaded.Contains("walk_0"));
+            Assert.Contains("walk_0", skin.PartialLoaded);
             Assert.Equal(30, skin.Cache[PetAction.Idle][0].Count);
-            Assert.False(skin.PartialLoaded.Contains("idle_0"));
+            Assert.DoesNotContain("idle_0", skin.PartialLoaded);
         }
     }
 
@@ -269,7 +269,7 @@ public class PetSkinBackfillTests : IDisposable
             && HasCachedFrames(skin, PetAction.Fall, 0, 24));
 
         var homeFrames = await WaitForFramesAsync(skin, PetAction.Home);
-        Assert.Equal(1, homeFrames.Count);
+        Assert.Single(homeFrames);
 
         skin.TrimToHomeOnly();
 
@@ -296,7 +296,7 @@ public class PetSkinBackfillTests : IDisposable
         lock (skin.SyncRoot)
         {
             Assert.False(skin.HomeOnlyMode);
-            Assert.True(skin.PartialLoaded.Contains("fall_0"));
+            Assert.Contains("fall_0", skin.PartialLoaded);
         }
 
         skin.Prefetch(new[] { PetAction.Walk });
@@ -324,7 +324,7 @@ public class PetSkinBackfillTests : IDisposable
         lock (skin.SyncRoot)
         {
             Assert.False(skin.HomeOnlyMode);
-            Assert.True(skin.PartialLoaded.Contains("fall_0"));
+            Assert.Contains("fall_0", skin.PartialLoaded);
             Assert.Equal(24, skin.Cache[PetAction.Fall][0].Count);
         }
     }

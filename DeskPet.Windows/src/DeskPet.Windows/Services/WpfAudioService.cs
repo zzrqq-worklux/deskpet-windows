@@ -74,7 +74,7 @@ public sealed class WpfAudioService : IAudioService
                 thread.Start();
                 ready.Wait();
             }
-            return _dispatcher;
+            return _dispatcher!;
         }
     }
 }
