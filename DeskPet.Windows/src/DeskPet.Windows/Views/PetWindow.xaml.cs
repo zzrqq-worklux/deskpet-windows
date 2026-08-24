@@ -34,6 +34,8 @@ public partial class PetWindow : Window
     private bool _leftDownInsideWindow;  // 本窗口内按下且未松开
     private bool _mouseDragActive;       // 拖拽已启动（位移 ≥5px），启动后不再触发单击
     private (double X, double Y)? _grabOffset;   // 拖拽抓取偏移（Core 坐标：抓取点 − 窗口底左）；保持宠物在抓取点下
+    private bool _pendingSingleClick;    // 双击防抖：有待定的延迟单击（双击时间窗内）
+    private DispatcherTimer? _singleClickTimer;  // 双击时间窗计时（超时 → 执行延迟的 Poke）
 
     public PetWindow()
     {
@@ -197,6 +199,58 @@ public partial class PetWindow : Window
         _grabOffset = null;
     }
 
+    /// <summary>
+    /// 双击防抖：宠物走动时窗口移动，WPF 原生 ClickCount 会被重置为 1（双击尺寸检查基于窗口客户区坐标）。
+    /// 单击延迟一个系统双击时间窗（SystemInformation.DoubleClickTime）：窗口内第二次单击 → Double
+    /// （自检测）；超时 → 执行延迟的 Poke。延迟是标准 Windows 双击 UX 的一部分。
+    /// </summary>
+    private void HandleClickUp(int clickCount)
+    {
+        Debug.WriteLine($"[DCLK] Up clickCount={clickCount} pending={_pendingSingleClick} dragging={_mouseDragActive}");
+        var action = PetClickDebounce.ClassifyUp(clickCount, _pendingSingleClick);
+        switch (action)
+        {
+            case ClickKind.Double:
+                Debug.WriteLine("[DCLK] -> Double (GoHome/LeaveHome)");
+                CancelPendingSingle();
+                if (_manager.LifeState == PetLifeState.Roaming) _manager.GoHome();
+                else _manager.LeaveHome();
+                break;
+            case ClickKind.Single:
+                Debug.WriteLine("[DCLK] -> Single (arm pending)");
+                ArmPendingSingle();
+                break;
+        }
+    }
+
+    private void ArmPendingSingle()
+    {
+        _pendingSingleClick = true;
+        if (_singleClickTimer == null)
+        {
+            _singleClickTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(System.Windows.Forms.SystemInformation.DoubleClickTime)
+            };
+            _singleClickTimer.Tick += OnSingleClickTimerTick;
+        }
+        _singleClickTimer.Start();
+    }
+
+    /// <summary>双击时间窗超时 → 执行延迟的单击动作（Poke）；宠物已回窝时 Poke 自带 LifeState 守卫。</summary>
+    private void OnSingleClickTimerTick(object? sender, EventArgs e)
+    {
+        Debug.WriteLine("[DCLK] timer fired -> Poke");
+        CancelPendingSingle();
+        _manager?.Poke();
+    }
+
+    private void CancelPendingSingle()
+    {
+        _pendingSingleClick = false;
+        _singleClickTimer?.Stop();
+    }
+
     protected override void OnMouseMove(System.Windows.Input.MouseEventArgs e)
     {
         base.OnMouseMove(e);
@@ -216,6 +270,7 @@ public partial class PetWindow : Window
             _grabOffset = _manager.WindowPosition is { } winPos
                 ? PetDragGrab.Offset(PointToCore(pos), winPos)
                 : null;
+            CancelPendingSingle();   // 拖拽开始：单击后的拖拽不是双击
             _manager.StartDrag();
             _mouseDragActive = true;
             CaptureMouse();   // 捕获后窗口在光标移出边界时仍持续收到 MouseMove
@@ -241,6 +296,7 @@ public partial class PetWindow : Window
             _mouseDragActive = false;
             _leftDownInsideWindow = false;
             _grabOffset = null;
+            CancelPendingSingle();   // 拖拽结束：先前单击不应延迟触发 Poke
             ReleaseMouseCapture();
             return;
         }
@@ -248,17 +304,7 @@ public partial class PetWindow : Window
         if (!_leftDownInsideWindow) return;
         _leftDownInsideWindow = false;
 
-        var kind = PetInteractionClassifier.Classify(e.ClickCount, isDragging: false);
-        switch (kind)
-        {
-            case ClickKind.Single:
-                _manager.Poke();
-                break;
-            case ClickKind.Double:
-                if (_manager.LifeState == PetLifeState.Roaming) _manager.GoHome();
-                else _manager.LeaveHome();
-                break;
-        }
+        HandleClickUp(e.ClickCount);
     }
 
     // MARK: - 捕获丢失兜底（fix round：拖拽收尾）
@@ -293,6 +339,7 @@ public partial class PetWindow : Window
         _mouseDragActive = false;
         _leftDownInsideWindow = false;
         _grabOffset = null;
+        CancelPendingSingle();
     }
 
     private async Task RenderCurrentFrameAsync()
@@ -324,6 +371,7 @@ public partial class PetWindow : Window
     {
         if (state == PetLifeState.AtHome)
         {
+            CancelPendingSingle();   // 回窝隐藏：待定的单击不应在重新显示后延迟触发
             _hiddenForHome = true;
             Hide();
         }
