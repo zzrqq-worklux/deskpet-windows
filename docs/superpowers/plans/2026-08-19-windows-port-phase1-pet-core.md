@@ -127,7 +127,7 @@
 **Interfaces:**
 - Consumes: T3/T4 的 PetManager；`IScreenInfo`。
 - Produces:
-  - `GoHome()`/`SnapHome()`：走回屏幕顶部中央 → 淡出 → `LifeState = AtHome`（Swift 610-662；目标点=顶部中央，无物理刘海 inset 概念，直接用工作区顶）。
+  - `GoHome()`/`SnapHome()`：目标点 = **距当前位置直线距离最近的屏幕边缘**（左/右/上，排除下边任务栏；2026-08 用户裁决，替换原"屏幕顶部中央"灵动岛遗留语义）→ 走到边缘（宠物边缘平齐）→ 淡出 → `LifeState = AtHome`（Swift 610-662 骨架；目标点计算见已实现的 `HomeEdgeTarget`：水平距离（到左/右边界的 |ΔX|）vs 垂直距离（到上边界 |ΔY|）取小者；平局规则：水平优先、左优先）。
   - `LeaveHome()`：从顶部上方 200pt 自由落体出场 + **必须调用 `PetSkin.ExitHomeOnlyMode()`**（终审遗留，否则回窝 trim 后出窝无帧可播）；落地点=工作区底部+窗口高 6%。
   - 淡出/淡入：`WindowAlpha` 每 tick ±0.06（Swift 331-357）。
   - 拖拽投放：`EvaluateNotchDropHover(point)` / `ExitNotchDropHover()` — Windows 重设计：把"刘海投放区"改为"屏幕顶部中央区域"（工作区宽 50% × 高 120pt 矩形）；拖入→触发 `SnapHome()`+发 `HomeRequested` 事件（应用层打开托盘菜单提示或直接进窝）；拖出→复位。
