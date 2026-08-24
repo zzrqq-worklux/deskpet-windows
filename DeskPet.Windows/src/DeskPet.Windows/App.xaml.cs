@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.IO;
 using System.Windows;
+using DeskPet.Core.Chat;
 using DeskPet.Core.Pet;
+using DeskPet.Core.RAG;
 using DeskPet.Core.Services;
 using DeskPet.Windows.Services;
 using DeskPet.Windows.Views;
@@ -20,6 +22,12 @@ public static class AppServices
     public static IMusicService Music { get; } = new StubMusicService();
 
     public static IScreenInfo Screen { get; } = new WpfScreenInfo();
+
+    /// <summary>对话客户端（Ruling 7：IChatClient；Task 7 重指向 RAG 注入管线，故可写）。</summary>
+    public static IChatClient Chat { get; set; } = ChatServices.Chat;
+
+    /// <summary>RAG 编排服务（Task 6 设置页导入/删除/检索用）。</summary>
+    public static RAGManager Rag { get; } = ChatServices.Rag;
 }
 
 public partial class App : System.Windows.Application
@@ -36,6 +44,8 @@ public partial class App : System.Windows.Application
         _ = AppServices.Settings.PetScale;
         _ = AppServices.Screen.WorkAreas;
         _ = AppServices.Music.IsPlaying;
+        _ = AppServices.Chat;
+        _ = AppServices.Rag;
         AppServices.Audio.Stop();
 
         _petWindow = new PetWindow();
