@@ -55,17 +55,23 @@
 
 | # | 结果 | 现象/备注 |
 |---|------|-----------|
-| 1 | | |
-| 2 | | |
-| 3 | | |
-| 4 | | |
-| 5 | | |
-| 6 | | |
-| 7 | | |
+| 1 | 待补 | 设置页 Chat 配置（Test Connection 需真实端点） |
+| 2 | 待补 | 气泡对话流式/历史/焦点（无头受限项：真机复验） |
+| 3 | 部分 | 宠物尺寸 DPI 问题已发现并修复（见修复轮 FIX-A）；自言自语待真机复验 |
+| 4 | 待补 | RAG 导入/检索需真实 Embedding 端点 |
+| 5 | 待补 | 错误处理需断网/错 Key 实测 |
+| 6 | 待补 | 气泡跟随/交互需真机复验 |
+| 7 | 待补 | 稳定性长跑 |
+
+> 截至 2026-08-24：Phase 2 收尾。用户真机验收启动后发现宠物过小（200% DPI）→ 修复轮 FIX-A 已修复并实测（120 DIP = 240px，见下）。其余清单项由用户后续补充记录。
 
 ## 修复轮
 
-（发现的问题在此记录：问题描述 → 修复 commit → 复验结果）
+### FIX-A：宠物在 200% DPI 下过小
+- 现象：宠物渲染仅 105 物理像素（base×scale），与 DPI 无关；macOS 版按 pt 计且有 120pt 最小高度下限 → 高 DPI 屏上 Windows 宠物只有 macOS 的一半多。
+- 修复：`IScreenInfo.DpiScale` + `PetManager.WindowSize = base × max(PetScale×skinScale, 120/baseHeight) × DpiScale`（与 Swift windowSize 对齐）；窗口与 Core 共享单一公式。
+- 提交：`e8cdb02` fix(windows): pet size follows dpi and swift minimum height
+- 复验：进程 DPI awareness=2（PerMonitorV2）；宠物窗口实测 120×120 DIP = 240 物理像素 @200%，屏幕居中 ✓
 
 ## 终审
 
