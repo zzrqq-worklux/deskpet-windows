@@ -24,12 +24,193 @@
             </ListBox>
         </Border>
 
-        <StackPanel Grid.Column="1" Margin="24,20,24,20">
+        <Grid Grid.Column="1" Margin="24,20,24,20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
             <TextBlock x:Name="SectionTitle" Text="宠物" FontSize="20" FontWeight="SemiBold" />
-            <Border Height="1" Background="#E0E0E0" Margin="0,8,0,16" />
-            <TextBlock Text="开发中 — Phase 3 实现"
-                       Foreground="#666666"
-                       FontSize="14" />
-        </StackPanel>
+            <Border Grid.Row="1" Height="1" Background="#E0E0E0" Margin="0,8,0,16" />
+
+            <Grid Grid.Row="2">
+                <StackPanel x:Name="PetPanel">
+                    <TextBlock Text="开发中 — Phase 3 实现"
+                               Foreground="#666666"
+                               FontSize="14" />
+                </StackPanel>
+
+                <ScrollViewer x:Name="ChatPanel"
+                              Visibility="Collapsed"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="0,0,8,0">
+                        <CheckBox x:Name="ChatEnabledCheck"
+                                  Content="启用宠物对话"
+                                  Checked="OnChatEnabledChanged"
+                                  Unchecked="OnChatEnabledChanged" />
+                        <TextBlock Text="对话启用后，点击宠物弹出的聊天按钮，即可开始聊天。"
+                                   FontSize="11"
+                                   Foreground="#666666"
+                                   TextWrapping="Wrap"
+                                   Margin="0,2,0,12" />
+
+                        <TextBlock Text="Base URL" FontSize="12" Foreground="#666666" Margin="0,0,0,2" />
+                        <TextBox x:Name="ChatBaseUrlBox"
+                                 Padding="6,4"
+                                 LostFocus="OnChatBaseUrlLostFocus" />
+                        <TextBlock Text="兼容任意 OpenAI Chat Completions 接口，可只填域名（自动补全 /v1/chat/completions）。"
+                                   FontSize="11"
+                                   Foreground="#999999"
+                                   TextWrapping="Wrap"
+                                   Margin="0,2,0,8" />
+
+                        <TextBlock Text="API Key" FontSize="12" Foreground="#666666" Margin="0,0,0,2" />
+                        <PasswordBox x:Name="ChatApiKeyBox"
+                                     Padding="6,4"
+                                     PasswordChanged="OnChatApiKeyChanged" />
+                        <TextBlock Text="仅保存在本机；本地模型（如 Ollama）可留空。"
+                                   FontSize="11"
+                                   Foreground="#999999"
+                                   Margin="0,2,0,8" />
+
+                        <TextBlock Text="Model" FontSize="12" Foreground="#666666" Margin="0,0,0,2" />
+                        <TextBox x:Name="ChatModelBox"
+                                 Padding="6,4"
+                                 LostFocus="OnChatModelLostFocus" />
+                        <TextBlock Text="如 gpt-4o-mini / deepseek-chat / qwen2.5。"
+                                   FontSize="11"
+                                   Foreground="#999999"
+                                   Margin="0,2,0,8" />
+
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="ChatTestButton"
+                                    Content="Test Connection"
+                                    Padding="12,4"
+                                    Click="OnTestConnectionClick" />
+                            <TextBlock x:Name="ChatTestStatus"
+                                       Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       Margin="10,0,0,0"
+                                       FontSize="12"
+                                       TextWrapping="Wrap" />
+                        </Grid>
+
+                        <TextBlock Text="System prompt（宠物人设）"
+                                   FontSize="12"
+                                   Foreground="#666666"
+                                   Margin="0,10,0,2" />
+                        <TextBox x:Name="ChatSystemPromptBox"
+                                 Height="110"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Padding="6,4"
+                                 LostFocus="OnChatSystemPromptLostFocus" />
+                        <TextBlock Text="宠物如何说话由这段提示词决定，可随意修改成你喜欢的性格。"
+                                   FontSize="11"
+                                   Foreground="#999999"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Grid x:Name="RagPanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <CheckBox x:Name="RagEnabledCheck"
+                              Content="对话时自动检索资料（RAG）"
+                              Checked="OnRagEnabledChanged"
+                              Unchecked="OnRagEnabledChanged" />
+                    <TextBlock Grid.Row="1"
+                               Text="开启后，宠物会在对话时自动检索导入的文档来回答你的文档内容。"
+                               FontSize="11"
+                               Foreground="#666666"
+                               TextWrapping="Wrap"
+                               Margin="0,2,0,12" />
+
+                    <TextBlock Grid.Row="2" Text="Embedding model" FontSize="12" Foreground="#666666" Margin="0,0,0,2" />
+                    <TextBox Grid.Row="3"
+                             x:Name="EmbeddingModelBox"
+                             Padding="6,4"
+                             LostFocus="OnEmbeddingModelLostFocus" />
+                    <TextBlock Grid.Row="4"
+                               Text="Ollama 默认使用 embeddinggemma（先运行 ollama pull embeddinggemma）。"
+                               FontSize="11"
+                               Foreground="#999999"
+                               TextWrapping="Wrap"
+                               Margin="0,2,0,10" />
+
+                    <Grid Grid.Row="5" Margin="0,4,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="ImportButton"
+                                Content="选择文件…"
+                                Padding="12,4"
+                                Click="OnImportClick" />
+                        <TextBlock x:Name="RagStatus"
+                                   Grid.Column="1"
+                                   VerticalAlignment="Center"
+                                   Margin="10,0"
+                                   FontSize="12"
+                                   TextWrapping="Wrap" />
+                        <Button x:Name="ClearDocsButton"
+                                Grid.Column="2"
+                                Content="清空"
+                                Padding="12,4"
+                                Click="OnClearDocumentsClick" />
+                    </Grid>
+
+                    <TextBlock Grid.Row="6"
+                               x:Name="NoDocsHint"
+                               Text="还没有导入文档。支持 .txt / .md / .markdown 文本文件，导入后宠物就能在对话中引用它们。"
+                               FontSize="11"
+                               Foreground="#999999"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,6" />
+
+                    <ListBox Grid.Row="7"
+                             x:Name="DocList"
+                             BorderBrush="#E0E0E0"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="2">
+                                    <Button DockPanel.Dock="Right"
+                                            Content="删除"
+                                            Tag="{Binding}"
+                                            Click="OnRemoveDocumentClick"
+                                            Padding="8,2"
+                                            Margin="6,0,0,0" />
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding SourceName}"
+                                                   FontSize="12"
+                                                   FontWeight="Medium" />
+                                        <TextBlock Text="{Binding Detail}"
+                                                   FontSize="11"
+                                                   Foreground="#666666" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Grid>
+        </Grid>
     </Grid>
 </Window>
