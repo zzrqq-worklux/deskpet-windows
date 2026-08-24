@@ -12,13 +12,17 @@ namespace DeskPet.Windows.Services;
 /// Core Rect 为"左下原点、y 向上"（同 Swift NSScreen.frame）。
 /// 换算：X 不变；y_up = 虚拟屏幕总高 - (bounds.Y + bounds.Height)；
 /// 其中虚拟屏幕总高 = max(所有屏的 bounds.Y + bounds.Height)。
-/// DPI：Phase 1 直接使用 Bounds 物理像素，DPI 缩放由 T6 窗口层处理。
+/// DPI：Bounds 为物理像素，DpiScale（物理/DIP）暴露给 Core 用于 Swift pt 对齐。
 /// </summary>
 public sealed class WpfScreenInfo : IScreenInfo
 {
     public IReadOnlyList<Rect> WorkAreas { get; }
 
     public Rect PrimaryWorkArea { get; }
+
+    /// <summary>主屏 物理像素/DIP：WinForms Bounds 为物理像素，SystemParameters.PrimaryScreenWidth 为 WPF DIP；
+    /// 除零/非正（无主屏等）回落 1.0。</summary>
+    public double DpiScale { get; }
 
     public WpfScreenInfo()
     {
@@ -51,5 +55,10 @@ public sealed class WpfScreenInfo : IScreenInfo
 
         WorkAreas = rects;
         PrimaryWorkArea = rects.Count > 0 ? rects[0] : new Rect(0, 0, 0, 0);
+
+        var primaryBoundsWidth = primary?.Bounds.Width ?? 0;
+        var dipWidth = System.Windows.SystemParameters.PrimaryScreenWidth;
+        DpiScale = dipWidth > 0 ? primaryBoundsWidth / dipWidth : 0;
+        if (DpiScale <= 0) DpiScale = 1.0;
     }
 }

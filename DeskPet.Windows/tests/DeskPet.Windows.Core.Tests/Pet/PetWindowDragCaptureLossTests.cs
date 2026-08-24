@@ -97,6 +97,7 @@ public class PetWindowDragCaptureLossTests
     {
         public IReadOnlyList<Rect> WorkAreas => new[] { new Rect(0, 0, 1920, 1080) };
         public Rect PrimaryWorkArea => new(0, 0, 1920, 1080);
+        public double DpiScale => 1.0;
     }
 
     /// <summary>暴露 PetWindow 受保护的捕获丢失/失焦处理器。

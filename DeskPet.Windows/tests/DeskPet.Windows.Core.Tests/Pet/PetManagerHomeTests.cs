@@ -17,9 +17,10 @@ namespace DeskPet.Windows.Core.Tests.Pet;
 ///   - 直接读 internal HomeOnlyMode（InternalsVisibleTo 测试钩子）；
 ///   - 行为验证：trim 后 idle 帧的加载被 HomeOnlyMode 拒绝（Loading 结束但 Cache 不写入），
 ///     home 帧仍可加载；ExitHomeOnlyMode 后 idle 帧恢复可加载。
-/// 工作区固定 1920x1080（Y=下、y 向上），窗口 64x64：出窝起点 (928, 1216)。
-/// 回窝目标 = 距当前位置最近的屏幕边缘（用户设计变更）：左 (X=0)、右 (X=1920−64)、
-/// 上 (X=当前X, Y=1080−64−4)；水平==垂直等距时水平优先，左==右等距时左优先。
+/// 工作区固定 1920x1080（Y=下、y 向上），皮肤帧 64x64 × scale 1.0 → 窗口 120x120
+/// （Swift minimumWindowHeight=120 floor 抬升）：出窝起点 (900, 1160)。
+/// 回窝目标 = 距当前位置最近的屏幕边缘（用户设计变更）：左 (X=0)、右 (X=1920−120)、
+/// 上 (X=当前X, Y=1080−120−4)；水平==垂直等距时水平优先，左==右等距时左优先。
 /// 投放区 = 主屏工作区顶部中央 50% 宽 × 120pt 高矩形：(480, 960)-(1440, 1080)。
 /// </summary>
 public class PetManagerHomeTests
@@ -135,6 +136,7 @@ public class PetManagerHomeTests
         public FakeScreens(Rect workArea) { _workArea = workArea; }
         public IReadOnlyList<Rect> WorkAreas => new[] { _workArea };
         public Rect PrimaryWorkArea => _workArea;
+        public double DpiScale => 1.0;
     }
 
     private static readonly Rect DefaultWorkArea = new(0, 0, 1920, 1080);
@@ -146,12 +148,12 @@ public class PetManagerHomeTests
                music ?? new FakeMusic(), screens ?? new FakeScreens(DefaultWorkArea), rng);
 
     private const double Dt = 1.0 / 60.0;
-    /// <summary>回窝上边缘目标：工作区顶 − 窗口高 − 4（X 不变时；X=1920/2−32 → 928, 1080−64−4 → 1012）。</summary>
-    private static (double X, double Y) HomeTarget => (928.0, 1012.0);
-    /// <summary>出窝起点：工作区顶 + 200（1080−64+200）。</summary>
-    private static (double X, double Y) LeaveStart => (928.0, 1216.0);
-    /// <summary>地面 Y = 工作区底 + 窗口高 6%（与实现同表达式保证位级一致）。</summary>
-    private static double FloorY => 64.0 * 0.06;
+    /// <summary>回窝上边缘目标：工作区顶 − 窗口高 − 4（X 不变时；X=1920/2−60 → 900, 1080−120−4 → 956）。</summary>
+    private static (double X, double Y) HomeTarget => (900.0, 956.0);
+    /// <summary>出窝起点：工作区顶 + 200（1080−120+200）。</summary>
+    private static (double X, double Y) LeaveStart => (900.0, 1160.0);
+    /// <summary>地面 Y = 工作区底 + 窗口高 6%（与实现同表达式保证位级一致）；窗口高 = floor 抬升后的 120。</summary>
+    private static double FloorY => 120.0 * 0.06;
     /// <summary>投放区内的点（区 = 顶部中央 50%×120pt：(480,960)-(1440,1080)）。</summary>
     private static (double X, double Y) InDropZone => (960.0, 1000.0);
 
@@ -160,8 +162,8 @@ public class PetManagerHomeTests
     /// <summary>三个区域各取一点：左下 → 左边缘；右中 → 右边缘（窗口右边对齐右边界）；顶中 → 上边缘（X 不变）。</summary>
     [Theory]
     [InlineData(400.0, 300.0, 0.0, 300.0)]     // 左下区域 → 左边缘（X=0 边界，Y 不变）
-    [InlineData(1500.0, 540.0, 1856.0, 540.0)]  // 右中区域 → 右边缘（右边界 1920 − 窗口宽 64）
-    [InlineData(928.0, 1000.0, 928.0, 1012.0)]  // 顶部中央附近 → 上边缘（沿用现有顶边公式）
+    [InlineData(1500.0, 540.0, 1800.0, 540.0)]  // 右中区域 → 右边缘（右边界 1920 − 窗口宽 120）
+    [InlineData(928.0, 1000.0, 928.0, 956.0)]  // 顶部中央附近 → 上边缘（沿用现有顶边公式）
     public async Task GoHome_TargetsNearestEdge(double x, double y, double tx, double ty)
     {
         using var fx = new SkinFixture();
@@ -302,7 +304,7 @@ public class PetManagerHomeTests
         pm.SyncWindowPosition((1700.0, 500.0));
 
         pm.SnapHome();
-        Assert.Equal((1856.0, 500.0), pm.WindowPosition!.Value);   // 右边界 1920 − 窗口宽 64
+        Assert.Equal((1800.0, 500.0), pm.WindowPosition!.Value);   // 右边界 1920 − 窗口宽 120
         Assert.True(pm.Fading);
 
         var i = 0;
@@ -313,7 +315,7 @@ public class PetManagerHomeTests
         }
         Assert.True(i < 100, "淡出未在时限内完成");
         Assert.Equal(PetLifeState.AtHome, pm.LifeState);
-        Assert.Equal((1856.0, 500.0), pm.WindowPosition!.Value);
+        Assert.Equal((1800.0, 500.0), pm.WindowPosition!.Value);
     }
 
     // MARK: - LeaveHome：顶部掉落 → 落地 → Roaming + ExitHomeOnlyMode

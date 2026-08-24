@@ -113,6 +113,12 @@ public class ServiceContractsTests
         Assert.Equal(typeof(Rect), primary!.PropertyType);
         Assert.True(primary.CanRead);
         Assert.False(primary.CanWrite);
+
+        var dpiScale = t.GetProperty(nameof(IScreenInfo.DpiScale));
+        Assert.NotNull(dpiScale);
+        Assert.Equal(typeof(double), dpiScale!.PropertyType);
+        Assert.True(dpiScale.CanRead);
+        Assert.False(dpiScale.CanWrite);
     }
 
     [Fact]

@@ -88,6 +88,7 @@ public class PetWindowClickDebounceTests
     {
         public IReadOnlyList<Rect> WorkAreas => new[] { new Rect(0, 0, 1920, 1080) };
         public Rect PrimaryWorkArea => new(0, 0, 1920, 1080);
+        public double DpiScale => 1.0;
     }
 
     private static void SetField(object target, string name, object? value) =>

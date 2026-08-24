@@ -11,6 +11,11 @@ public interface IScreenInfo
 
     /// <summary>主屏工作区。</summary>
     Rect PrimaryWorkArea { get; }
+
+    /// <summary>主屏 DPI 缩放 = 物理像素 / DIP（100% = 1.0，200% = 2.0）。
+    /// Core 坐标空间为物理像素，宠物渲染尺寸需按此换算与 Swift 的 pt 语义对齐；
+    /// Swift 侧无对应概念（macOS 无 Windows DPI）。</summary>
+    double DpiScale { get; }
 }
 
 /// <summary>

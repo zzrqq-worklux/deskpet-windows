@@ -116,6 +116,7 @@ public class PetManagerStateTests
     {
         public IReadOnlyList<Rect> WorkAreas { get; } = new[] { new Rect(0, 0, 1920, 1080) };
         public Rect PrimaryWorkArea => new(0, 0, 1920, 1080);
+        public double DpiScale => 1.0;
     }
 
     private static PetManager NewManager(

@@ -33,4 +33,13 @@ public class WpfScreenInfoTests
             Assert.True(r.Height > 0);
         }
     }
+
+    [Fact]
+    public void DpiScaleIsPositiveAndAtLeastOne()
+    {
+        // 100% 缩放 = 1.0，更高缩放（如 200%）> 1.0；任何机器上都不应 ≤ 0
+        var info = new WpfScreenInfo();
+
+        Assert.True(info.DpiScale >= 1.0);
+    }
 }

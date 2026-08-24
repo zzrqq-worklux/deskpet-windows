@@ -13,7 +13,8 @@ namespace DeskPet.Windows.Core.Tests.Pet;
 /// PetManager T4 行为层测试：走动/掉落物理 + 行为 AI + 属性衰减
 /// （对照 Swift PetManager.swift 257-330、452-605、749-754）。
 /// 随机决策用注入固定种子 Random 保证确定性；皮肤为最小真实 skin（同 T3 模式）。
-/// 工作区固定 1920x1080（Y=下、y 向上），窗口尺寸 = 64x64（皮肤帧 64x64 × scale 1.0）。
+/// 工作区固定 1920x1080（Y=下、y 向上），皮肤帧 64x64 × scale 1.0 → 窗口尺寸 = 120x120
+/// （Swift minimumWindowHeight=120 floor 抬升：120/64=1.875 > userScale 1.0）。
 /// </summary>
 public class PetManagerBehaviorTests
 {
@@ -113,6 +114,7 @@ public class PetManagerBehaviorTests
         public FakeScreens(Rect workArea) { _workArea = workArea; }
         public IReadOnlyList<Rect> WorkAreas => new[] { _workArea };
         public Rect PrimaryWorkArea => _workArea;
+        public double DpiScale => 1.0;
     }
 
     private static readonly Rect DefaultWorkArea = new(0, 0, 1920, 1080);
@@ -130,8 +132,8 @@ public class PetManagerBehaviorTests
     }
 
     private const double Dt = 1.0 / 60.0;
-    /// <summary>地面 Y = 工作区底 + 窗口高 6% = 0 + 64 * 0.06（与实现同表达式保证位级一致）。</summary>
-    private static double FloorY => 64.0 * 0.06;
+    /// <summary>地面 Y = 工作区底 + 窗口高 6%（与实现同表达式保证位级一致）；窗口高 = floor 抬升后的 120。</summary>
+    private static double FloorY => 120.0 * 0.06;
 
     // MARK: - 行为 AI（固定种子确定性决策）
 
@@ -358,7 +360,7 @@ public class PetManagerBehaviorTests
         fx.Frames("idle_0", 3);
         var skin = (await fx.LoadAsync())!;
         var minX = 1920.0 * 0.06;
-        var maxX = 1920.0 * 0.94 - 64.0;
+        var maxX = 1920.0 * 0.94 - 120.0;   // 窗口宽 120（floor 抬升后）
         var minY = 1080.0 * 0.10;
         var maxY = 1080.0 * 0.60;
         var minDistance = 1920.0 * 0.20;
@@ -390,7 +392,7 @@ public class PetManagerBehaviorTests
         await WaitCacheAsync(skin, PetAction.Idle, 0);
         await WaitCacheAsync(skin, PetAction.Fall, 0);
         var pm = NewManager(skin);
-        pm.SyncWindowPosition((500.0, 19.0));             // 距地面 15.16 → 落地速度 ~123 < 300 → 不弹跳
+        pm.SyncWindowPosition((500.0, 19.0));             // 距地面 11.8 → 落地速度 ~109 < 300 → 不弹跳
 
         pm.InterruptToFall();
         Assert.Equal(PetAction.Fall, pm.Action);
@@ -434,7 +436,7 @@ public class PetManagerBehaviorTests
         await WaitCacheAsync(skin, PetAction.Idle, 0);
         await WaitCacheAsync(skin, PetAction.Fall, 0);
         var pm = NewManager(skin);
-        pm.SyncWindowPosition((500.0, 1000.0));           // 高落差 → 落地速度 ~998 > 300 → 反弹 25%
+        pm.SyncWindowPosition((500.0, 1000.0));           // 高落差 → 落地速度 ~996 > 300 → 反弹 25%
         pm.LifeState = PetLifeState.AtHome;
 
         pm.LeaveHome();
@@ -459,7 +461,7 @@ public class PetManagerBehaviorTests
         Assert.Equal(PetMovementMode.Floor, pm.MovementMode);
         Assert.Equal(2, contacts);                         // 高速落地 → 反弹一次 → 再次落地
         Assert.True(sawBounce);
-        Assert.Equal(928.0, pm.WindowPosition!.Value.X);   // LeaveHome 定位到工作区顶上方 200pt 中央（Swift 676-679）
+        Assert.Equal(900.0, pm.WindowPosition!.Value.X);   // LeaveHome 定位到工作区顶上方 200pt 中央（Swift 676-679；960 − 120/2）
         Assert.Equal(floorY, pm.WindowPosition!.Value.Y);  // 最终停在地面
     }
 
@@ -480,7 +482,7 @@ public class PetManagerBehaviorTests
 
         Assert.Equal(PetAction.Idle, pm.Action);           // 兜底帧首帧即算播完 → 回 idle（Swift 同）
         Assert.Equal(PetMovementMode.Floor, pm.MovementMode);
-        Assert.Equal(928.0, pm.WindowPosition!.Value.X);   // LeaveHome 定位到工作区顶上方 200pt 中央
+        Assert.Equal(900.0, pm.WindowPosition!.Value.X);   // LeaveHome 定位到工作区顶上方 200pt 中央（960 − 120/2）
         Assert.Equal(FloorY, pm.WindowPosition!.Value.Y);  // 已落地并静止
     }
 

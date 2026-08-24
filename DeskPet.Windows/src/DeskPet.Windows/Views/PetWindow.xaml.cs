@@ -24,7 +24,7 @@ public partial class PetWindow : Window
     private PetManager? _manager;
     private BubbleWindow? _bubble;
     private int _maxPixel;
-    private double _dpiScale = 1.0;   // 物理像素 / WPF DIP（主屏缩放；Phase 1 单缩放假设，多屏混合 DPI 为已知限制）
+    private double _dpiScale = 1.0;   // 物理像素 / WPF DIP（主屏缩放；取自 AppServices.Screen.DpiScale，与 Core 同源；Phase 1 单缩放假设，多屏混合 DPI 为已知限制）
     private DispatcherTimer? _timer;
     private bool _hiddenForHome;
 
@@ -57,15 +57,18 @@ public partial class PetWindow : Window
         }
 
         _maxPixel = _skin.MaxPixelSize;
-        _dpiScale = System.Windows.Forms.Screen.PrimaryScreen!.Bounds.Width / SystemParameters.PrimaryScreenWidth;
+        // DpiScale（物理像素/DIP）与 Core 共用同一 IScreenInfo 实例（AppServices.Screen = WpfScreenInfo），
+        // 窗口层全部 物理px ↔ DIP 换算同源，杜绝两处 DPI 公式漂移。
+        _dpiScale = AppServices.Screen.DpiScale;
         if (_dpiScale <= 0) _dpiScale = 1.0;
-        var (baseWidth, baseHeight) = _skin.BaseFrameSize ?? (300, 300);
-        // 与 Core WindowSize（base × PetScale × skin.Scale，PetManager.cs:624-635）保持一致：
-        // BoringPet 内置皮肤 scale=0.35，缺失该因子会使窗口比 Core 计算大 ~2.9 倍，
-        // 回窝目标/投放/首走跳变全部按错误尺寸计算。
-        var scale = AppServices.Settings.PetScale * _skin.Scale;
-        Width = baseWidth * scale / _dpiScale;
-        Height = baseHeight * scale / _dpiScale;
+        // 窗口 DIP 尺寸 = Core WindowSize（物理像素）÷ DpiScale：两处共用 PetManager.WindowSizeFor
+        // 单一公式（scale = max(PetScale × skin.Scale, 120/max(baseHeight,1))）。BoringPet 内置
+        // scale=0.35 → floor 120/300=0.4 → 窗口 120×120（旧实现漏掉 floor 与 DpiScale，200% 屏上
+        // 仅 105px 物理像素，而 Swift 为 240px）。DpiScale 在分子分母同源抵消，但公式改动只允许
+        // 发生在 WindowSizeFor 一处 —— 回窝目标/投放/首走全部按 Core 尺寸计算，两侧不得各自演化。
+        var size = PetManager.WindowSizeFor(_skin.BaseFrameSize, AppServices.Settings.PetScale, _skin.Scale, _dpiScale);
+        Width = size.Width / _dpiScale;
+        Height = size.Height / _dpiScale;
         // 与 Core 对齐：管理器需要知道窗口实际位置（否则拖拽抓取偏移无基准、回退为光标锚定）
         _manager.SyncWindowPosition(PositionAtInitialRoaming());
 

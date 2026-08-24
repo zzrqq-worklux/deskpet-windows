@@ -302,5 +302,6 @@ public class BubbleViewModelTests : IDisposable
 
         public IReadOnlyList<Rect> WorkAreas => new[] { _workArea };
         public Rect PrimaryWorkArea => _workArea;
+        public double DpiScale => 1.0;
     }
 }

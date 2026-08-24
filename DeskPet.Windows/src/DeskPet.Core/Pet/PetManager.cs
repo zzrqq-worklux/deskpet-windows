@@ -136,6 +136,10 @@ public class PetManager : INotifyPropertyChanged
     private const double DiagnosticsIntervalSeconds = 5;
     private const double HomeFadeRate = 3.6;      // 淡出/淡入 ±0.06 / 60fps-tick（Swift 331-357，折算每秒）
 
+    /// <summary>宠物窗口的最小可见高度（Swift PetManager.swift 70 行 minimumWindowHeight=120，单位同窗口尺寸）：
+    /// 防止多层缩放（PetScale × 皮肤 scale）叠加后宠物小到看不清（内置皮肤 300×300×0.35 → 105，低于此值被抬到 120）。</summary>
+    public const double MinimumWindowHeight = 120;
+
     public PetManager(
         PetSkin skin,
         ISettingsService settings,
@@ -619,20 +623,28 @@ public class PetManager : INotifyPropertyChanged
         return (screen.X + screen.Width / 2 - size.Width / 2, screen.Y + screen.Height * 0.22);
     }
 
-    /// <summary>窗口尺寸 = 皮肤基础帧尺寸 × 用户缩放 × 皮肤 scale（Swift windowSize 77-84；
-    /// minimumWindowHeight 下限不适用：窗口实际尺寸由 T6 窗口层管理）。</summary>
-    private (double Width, double Height) WindowSize
+    /// <summary>
+    /// 宠物窗口尺寸（Swift windowSize 77-84 移植；Core 与窗口层共用此单一公式，防止两处计算漂移）：
+    /// scale = max(PetScale × 皮肤 scale, <see cref="MinimumWindowHeight"/> / max(baseHeight, 1))；
+    /// 结果 = base × scale × dpiScale（物理像素）。窗口层换算 DIP 时除以同一个 dpiScale，
+    /// 分子分母同源抵消，但公式本身必须完全同式（改动只发生在此处）。
+    /// </summary>
+    public static (double Width, double Height) WindowSizeFor(
+        (int Width, int Height)? baseFrameSize, double petScale, double skinScale, double dpiScale)
     {
-        get
+        if (baseFrameSize is { } baseSize)
         {
-            if (_skin.BaseFrameSize is { } baseSize)
-            {
-                var scale = _settings.PetScale * _skin.Scale;
-                return (baseSize.Width * scale, baseSize.Height * scale);
-            }
-            return (120, 120);
+            var userScale = petScale * skinScale;
+            var floor = MinimumWindowHeight / Math.Max(baseSize.Height, 1);
+            var scale = Math.Max(userScale, floor);
+            return (baseSize.Width * scale * dpiScale, baseSize.Height * scale * dpiScale);
         }
+        return (120, 120);
     }
+
+    /// <summary>窗口尺寸（物理像素，含 DpiScale）：见 <see cref="WindowSizeFor"/>（Swift windowSize 77-84）。</summary>
+    private (double Width, double Height) WindowSize
+        => WindowSizeFor(_skin.BaseFrameSize, _settings.PetScale, _skin.Scale, _screens.DpiScale);
 
     // MARK: - 属性衰减（Swift 749-754，60s 间隔在 Tick 内累计触发）
 
