@@ -170,7 +170,7 @@ public class PetWindowDragCaptureLossTests
     }
 
     [Fact]
-    public void LostMouseCapture_while_dragging_after_home_skips_end_drag()
+    public void LostMouseCapture_while_dragging_after_home_still_ends_drag()
     {
         OnSta(() =>
         {
@@ -178,8 +178,9 @@ public class PetWindowDragCaptureLossTests
 
             Fire(window, "OnLostMouseCapture");
 
-            // 已进窝（投放区 + AtHome）：ExitNotchDropHover=true → 跳过 EndDrag（IsDragging 保持=已回家）
-            Assert.True(manager.IsDragging);
+            // 已进窝（投放区 + AtHome）：ExitNotchDropHover=true（清投放悬停态），
+            // 但 EndDrag 必须无条件执行（Swift 语义）——IsDragging 泄漏会冻结出窝后的宠物
+            Assert.False(manager.IsDragging);
             Assert.False(manager.IsHoveringDropZone);                        // 投放悬停态被清除
             Assert.False(GetBool(window, "_mouseDragActive"));
             Assert.False(GetBool(window, "_leftDownInsideWindow"));

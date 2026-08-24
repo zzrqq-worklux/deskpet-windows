@@ -59,8 +59,12 @@ public partial class PetWindow : Window
         _dpiScale = System.Windows.Forms.Screen.PrimaryScreen!.Bounds.Width / SystemParameters.PrimaryScreenWidth;
         if (_dpiScale <= 0) _dpiScale = 1.0;
         var (baseWidth, baseHeight) = _skin.BaseFrameSize ?? (300, 300);
-        Width = baseWidth * AppServices.Settings.PetScale / _dpiScale;
-        Height = baseHeight * AppServices.Settings.PetScale / _dpiScale;
+        // 与 Core WindowSize（base × PetScale × skin.Scale，PetManager.cs:624-635）保持一致：
+        // BoringPet 内置皮肤 scale=0.35，缺失该因子会使窗口比 Core 计算大 ~2.9 倍，
+        // 回窝目标/投放/首走跳变全部按错误尺寸计算。
+        var scale = AppServices.Settings.PetScale * _skin.Scale;
+        Width = baseWidth * scale / _dpiScale;
+        Height = baseHeight * scale / _dpiScale;
         // 与 Core 对齐：管理器需要知道窗口实际位置（否则拖拽抓取偏移无基准、回退为光标锚定）
         _manager.SyncWindowPosition(PositionAtInitialRoaming());
 
@@ -290,9 +294,12 @@ public partial class PetWindow : Window
 
         if (_mouseDragActive)
         {
-            // 拖拽优先：先问投放区，已进窝则跳过落地动画（EndDrag）
-            var droppedHome = _manager.ExitNotchDropHover();
-            if (!droppedHome) _manager.EndDrag();
+            // 先问投放区（返回值仅用于区分"已进窝跳过落地动画"；进窝后窗口已隐藏，无动画可做），
+            // 但 EndDrag 必须无条件执行：否则 IsDragging 泄漏 → 出窝后宠物永久冻结
+            // （下落一次性动画完成、行为 AI、Poke/Pet/GoHome 全部被 IsDragging 守卫挡住，Swift 总是先 endDrag）。
+            // EndDrag 在 AtHome 下无害：SetAction(Idle) 的预取被 Roaming 门控、帧加载被 homeOnlyMode 拒绝。
+            _ = _manager.ExitNotchDropHover();
+            _manager.EndDrag();
             _mouseDragActive = false;
             _leftDownInsideWindow = false;
             _grabOffset = null;
@@ -314,8 +321,7 @@ public partial class PetWindow : Window
     /// 隐藏持有捕获的窗口会释放捕获，后续 MouseUp 不再到达本窗口）、捕获被系统/其他窗口抢占
     /// （Alt+Tab 等）时，MouseUp 永远不来 → 若不在此收尾，manager.IsDragging 永久置位，
     /// Poke/Pet/GoHome/StartDrag 全部 no-op，宠物冻结直至重启。
-    /// 语义与正常松手一致：先问投放区（已进窝 → 跳过 EndDrag，IsDragging 保持=已回家），
-    /// 否则 EndDrag 落地。
+    /// 先问投放区（清投放悬停态），再无条件 EndDrag（Swift 语义；AtHome 下无害）。
     /// </summary>
     protected override void OnLostMouseCapture(System.Windows.Input.MouseEventArgs e)
     {
@@ -334,8 +340,8 @@ public partial class PetWindow : Window
     private void FinishDragOnCaptureLoss()
     {
         if (_manager == null || !_mouseDragActive) return;
-        var droppedHome = _manager.ExitNotchDropHover();
-        if (!droppedHome) _manager.EndDrag();
+        _ = _manager.ExitNotchDropHover();
+        _manager.EndDrag();   // 无条件收尾（同上：IsDragging 泄漏会冻结宠物；AtHome 下无害）
         _mouseDragActive = false;
         _leftDownInsideWindow = false;
         _grabOffset = null;

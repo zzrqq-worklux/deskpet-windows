@@ -227,7 +227,7 @@ public class PetDragGrabTests
     }
 
     [Fact]
-    public void MouseUp_after_drop_home_clears_grab_offset_without_end_drag()
+    public void MouseUp_after_drop_home_still_ends_drag()
     {
         OnSta(() =>
         {
@@ -236,7 +236,9 @@ public class PetDragGrabTests
             Fire(window, "OnMouseLeftButtonUp");
 
             Assert.Null(GetField(window, "_grabOffset"));
-            Assert.True(manager.IsDragging);        // 已进窝 → 跳过 EndDrag（语义=已回家）
+            // 已进窝（投放区 + AtHome）：ExitNotchDropHover=true（清投放悬停态），
+            // 但 EndDrag 无条件执行（Swift 语义）——IsDragging 泄漏会冻结出窝后的宠物
+            Assert.False(manager.IsDragging);
             Assert.False(manager.IsHoveringDropZone);
         });
     }

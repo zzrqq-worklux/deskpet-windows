@@ -13,7 +13,9 @@ public sealed class PetSkin
     };
 
     internal IReadOnlyDictionary<PetAction, IReadOnlyList<List<string>>> VariantUrls { get; }
-    internal double Scale { get; }
+
+    /// <summary>皮肤缩放因子（config.json "scale"；窗口层用它保持与 Core WindowSize 一致的窗口尺寸）。</summary>
+    public double Scale { get; }
 
     public int MaxPixelSize { get; }
     public (int Width, int Height)? BaseFrameSize { get; }
