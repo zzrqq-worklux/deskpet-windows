@@ -439,6 +439,113 @@ public class PetManagerHomeTests
         Assert.Equal(PetAction.Fall, pm.Action);
     }
 
+    // MARK: - 回窝打断：Poke/Pet 取消回窝过渡（Fix D：回窝途中单击不再飘向边缘）
+
+    [Fact]
+    public async Task Poke_DuringGoHomeWalk_CancelsHomeAndPlaysHappy()
+    {
+        using var fx = new SkinFixture();
+        fx.Frames("idle_0", 3);
+        fx.Frames("walk_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        await WaitCacheAsync(skin, PetAction.Idle, 0);
+        await WaitCacheAsync(skin, PetAction.Walk, 0);
+        var pm = NewManager(skin);
+        pm.SyncWindowPosition((400.0, 300.0));
+
+        pm.GoHome();
+        Assert.True(pm.MovingHome);
+        Assert.NotNull(pm.WalkTarget);
+        Assert.Equal(PetAction.Walk, pm.Action);
+
+        pm.Poke();                                                // 回窝走回途中单击
+        Assert.False(pm.MovingHome);                              // 回窝过渡被取消
+        Assert.False(pm.Fading);
+        Assert.Null(pm.WalkTarget);                               // 走动物理不再推进
+        Assert.Equal(PetAction.Happy, pm.Action);
+
+        var pos = pm.WindowPosition!.Value;
+        for (var i = 0; i < 10; i++) pm.Tick(Dt);
+        Assert.Equal(pos, pm.WindowPosition!.Value);              // 停住，不再飘向边缘
+        Assert.Equal(PetLifeState.Roaming, pm.LifeState);
+        Assert.Equal(1.0, pm.WindowAlpha);
+    }
+
+    [Fact]
+    public async Task Poke_DuringFade_CancelsHome()
+    {
+        using var fx = new SkinFixture();
+        fx.Frames("idle_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        await WaitCacheAsync(skin, PetAction.Idle, 0);
+        var pm = NewManager(skin);
+
+        pm.SnapHome();                                            // 瞬间回窝 → 淡出中
+        Assert.True(pm.Fading);
+        Assert.True(pm.MovingHome);
+        pm.Tick(Dt);
+        var alpha = pm.WindowAlpha;
+        Assert.True(alpha < 1.0);
+
+        pm.Poke();                                                // 淡出途中单击
+        Assert.False(pm.Fading);                                  // 淡出被取消
+        Assert.False(pm.MovingHome);
+        Assert.Equal(PetAction.Happy, pm.Action);
+
+        pm.Tick(Dt);
+        Assert.Equal(alpha, pm.WindowAlpha);                      // alpha 冻结，不再继续降
+        Assert.Equal(PetLifeState.Roaming, pm.LifeState);         // 未进窝
+    }
+
+    [Fact]
+    public async Task Pet_DuringGoHomeWalk_CancelsHome()
+    {
+        using var fx = new SkinFixture();
+        fx.Frames("idle_0", 3);
+        fx.Frames("walk_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        await WaitCacheAsync(skin, PetAction.Idle, 0);
+        await WaitCacheAsync(skin, PetAction.Walk, 0);
+        var pm = NewManager(skin);
+        pm.SyncWindowPosition((400.0, 300.0));
+
+        pm.GoHome();
+        Assert.True(pm.MovingHome);
+        Assert.NotNull(pm.WalkTarget);
+
+        pm.Pet();                                                 // 回窝走回途中抚摸
+        Assert.False(pm.MovingHome);
+        Assert.False(pm.Fading);
+        Assert.Null(pm.WalkTarget);
+        Assert.Equal(PetAction.Happy, pm.Action);
+        Assert.Equal(100, pm.Happiness);                          // +12 封顶 100（默认 100 → 100）
+
+        var pos = pm.WindowPosition!.Value;
+        for (var i = 0; i < 10; i++) pm.Tick(Dt);
+        Assert.Equal(pos, pm.WindowPosition!.Value);              // 停住，不再飘向边缘
+        Assert.Equal(PetLifeState.Roaming, pm.LifeState);
+        Assert.Equal(1.0, pm.WindowAlpha);
+    }
+
+    [Fact]
+    public async Task Poke_NormalRoaming_Unchanged()
+    {
+        using var fx = new SkinFixture();
+        fx.Frames("idle_0", 3);
+        var skin = (await fx.LoadAsync())!;
+        await WaitCacheAsync(skin, PetAction.Idle, 0);
+        var pm = NewManager(skin);
+        pm.SyncWindowPosition((400.0, 300.0));
+
+        pm.Poke();                                                // 正常 roaming：行为不变
+        Assert.Equal(PetAction.Happy, pm.Action);
+        Assert.Equal(99, pm.Happiness);                           // 心情减 1
+        Assert.False(pm.MovingHome);
+        Assert.False(pm.Fading);
+        Assert.Null(pm.WalkTarget);
+        Assert.Equal((400.0, 300.0), pm.WindowPosition!.Value);
+    }
+
     // MARK: - 回窝中 guard：GoHome/SnapHome/LeaveHome 拒绝
 
     [Fact]

@@ -373,10 +373,12 @@ public class PetManager : INotifyPropertyChanged
 
     // MARK: - 交互 API（Swift 703-745）
 
-    /// <summary>单击：戳一下。心情差会委屈（hurt），否则开心地蹦一下并减 1 心情（掉落/出窝中不响应）。</summary>
+    /// <summary>单击：戳一下。心情差会委屈（hurt），否则开心地蹦一下并减 1 心情（掉落/出窝中不响应）。
+    /// 与 StartDrag 一致：任何交互都打断回窝过渡，否则宠物会以站立动画继续飘向屏幕边缘。</summary>
     public void Poke()
     {
         if (LifeState != PetLifeState.Roaming || IsDragging || _movementMode != PetMovementMode.Floor) return;
+        CancelHomeTransition();
         if (Happiness < 30)
         {
             SetAction(PetAction.Hurt);
@@ -388,12 +390,21 @@ public class PetManager : INotifyPropertyChanged
         }
     }
 
-    /// <summary>抚摸（Swift 714-718）。</summary>
+    /// <summary>抚摸（Swift 714-718）。同样打断回窝过渡（一致性：任何交互都中断回窝）。</summary>
     public void Pet()
     {
         if (LifeState != PetLifeState.Roaming || IsDragging) return;
+        CancelHomeTransition();
         Happiness = Math.Min(100, Happiness + 12);
         SetAction(PetAction.Happy);
+    }
+
+    /// <summary>取消进行中的回窝过渡（movingHome/fading/walkTarget 复位，语义与 StartDrag 打断回窝一致）。</summary>
+    private void CancelHomeTransition()
+    {
+        _movingHome = false;
+        _fading = false;
+        _walkTarget = null;
     }
 
     /// <summary>拎起（Swift 721-731）：打断任何小把戏，包括回窝（movingHome/fading 复位）。</summary>
