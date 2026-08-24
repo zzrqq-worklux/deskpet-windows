@@ -22,9 +22,15 @@ public static class ChatServices
 
     private static readonly PetChatClient Client = new(AppServices.Settings, Http);
 
-    /// <summary>对话客户端，以 IChatClient 暴露（Ruling 7；Task 7 将在 AppServices 替换为装饰器管线）。</summary>
+    /// <summary>对话客户端，以 IChatClient 暴露（Ruling 7；AppServices 在其上套 RAG 注入管线）。</summary>
     public static IChatClient Chat => Client;
 
+    /// <summary>同一实例的向量化服务（PetChatClient 同时实现 IEmbeddingService；RAG 管线复用）。</summary>
+    public static IEmbeddingService Embedding => Client;
+
+    /// <summary>RAG 向量库（与 <see cref="Rag"/> 共用同一实例，管线检索与导入数据一致）。</summary>
+    public static IVectorStore VectorStore { get; } = new LocalVectorStore(DataDirectory);
+
     /// <summary>RAG 编排（向量库 + 注册表均持久化到 <see cref="DataDirectory"/>，Ruling 6）。</summary>
-    public static RAGManager Rag { get; } = new(Client, new LocalVectorStore(DataDirectory), DataDirectory);
+    public static RAGManager Rag { get; } = new(Client, VectorStore, DataDirectory);
 }

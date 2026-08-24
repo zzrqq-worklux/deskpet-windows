@@ -23,8 +23,12 @@ public static class AppServices
 
     public static IScreenInfo Screen { get; } = new WpfScreenInfo();
 
-    /// <summary>对话客户端（Ruling 7：IChatClient；Task 7 重指向 RAG 注入管线，故可写）。</summary>
-    public static IChatClient Chat { get; set; } = ChatServices.Chat;
+    /// <summary>
+    /// 对话客户端（Ruling 7：IChatClient；Ruling 4b：重指向 RAG 注入管线——
+    /// 包装共享 PetChatClient 实例，其同时充当 IEmbeddingService，故可写）。
+    /// </summary>
+    public static IChatClient Chat { get; set; } =
+        new RagChatPipeline(ChatServices.Chat, ChatServices.Embedding, ChatServices.VectorStore, Settings);
 
     /// <summary>RAG 编排服务（Task 6 设置页导入/删除/检索用）。</summary>
     public static RAGManager Rag { get; } = ChatServices.Rag;
