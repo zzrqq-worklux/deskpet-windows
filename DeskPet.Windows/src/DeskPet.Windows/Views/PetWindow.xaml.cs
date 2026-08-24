@@ -33,6 +33,7 @@ public partial class PetWindow : Window
     private DateTime _mouseDownTime;                 // 按下时间戳（Swift DragDetector 状态对齐；双击分类以 WPF ClickCount 为准）
     private bool _leftDownInsideWindow;  // 本窗口内按下且未松开
     private bool _mouseDragActive;       // 拖拽已启动（位移 ≥5px），启动后不再触发单击
+    private (double X, double Y)? _grabOffset;   // 拖拽抓取偏移（Core 坐标：抓取点 − 窗口底左）；保持宠物在抓取点下
 
     public PetWindow()
     {
@@ -58,7 +59,8 @@ public partial class PetWindow : Window
         var (baseWidth, baseHeight) = _skin.BaseFrameSize ?? (300, 300);
         Width = baseWidth * AppServices.Settings.PetScale / _dpiScale;
         Height = baseHeight * AppServices.Settings.PetScale / _dpiScale;
-        PositionAtInitialRoaming();
+        // 与 Core 对齐：管理器需要知道窗口实际位置（否则拖拽抓取偏移无基准、回退为光标锚定）
+        _manager.SyncWindowPosition(PositionAtInitialRoaming());
 
         // 种子缓存：与 PetManager.SetAction(Idle) 的预取清单一致。不预取则缓存恒空、
         // 循环永不推进（CurrentFrameIndex 恒 null），宠物不会渲染。
@@ -93,13 +95,14 @@ public partial class PetWindow : Window
         return all.Length == 0 ? 0 : all.Max(s => s.Bounds.Y + s.Bounds.Height);
     }
 
-    private void PositionAtInitialRoaming()
+    private (double X, double Y) PositionAtInitialRoaming()
     {
         // 与 PetManager.InitialRoamingPosition 一致：主屏水平居中，窗口底边在屏高 22% 处（y-up）。
         var area = AppServices.Screen.PrimaryWorkArea;
         var x = area.X + (area.Width - Width * _dpiScale) / 2;
         var y = area.Y + area.Height * 0.22;
         ApplyPosition((x, y));
+        return (x, y);
     }
 
     // MARK: - 引擎驱动（60fps 计时器）
@@ -191,6 +194,7 @@ public partial class PetWindow : Window
         _mouseDownTime = DateTime.UtcNow;
         _leftDownInsideWindow = true;
         _mouseDragActive = false;
+        _grabOffset = null;
     }
 
     protected override void OnMouseMove(System.Windows.Input.MouseEventArgs e)
@@ -206,14 +210,22 @@ public partial class PetWindow : Window
             if (!PetInteractionClassifier.IsDragGesture(
                     (_mouseDownClient.X, _mouseDownClient.Y), (pos.X, pos.Y),
                     PetInteractionClassifier.DefaultDragThresholdPx)) return;
+            // 抓取偏移在阈值跨越处（拖拽真正启动点）记录：抓取点相对窗口底左的 Core 偏移。
+            // 此后 SyncWindowPosition(光标 − 偏移) → 宠物保持在抓取点下方（Swift 语义），
+            // 且启动瞬间 target == 当前窗口位置（不跳变）。窗口位置未知时退化为光标锚定（旧行为）。
+            _grabOffset = _manager.WindowPosition is { } winPos
+                ? PetDragGrab.Offset(PointToCore(pos), winPos)
+                : null;
             _manager.StartDrag();
             _mouseDragActive = true;
             CaptureMouse();   // 捕获后窗口在光标移出边界时仍持续收到 MouseMove
         }
 
         var core = PointToCore(pos);
+        if (_grabOffset is { } offset) core = PetDragGrab.Target(core, offset);
         _manager.SyncWindowPosition(core);
-        _manager.EvaluateNotchDropHover(core);
+        // 投放区判定用光标本身（Swift evaluateNotchDropHover(at: mouse) 语义）
+        _manager.EvaluateNotchDropHover(PointToCore(pos));
     }
 
     protected override void OnMouseLeftButtonUp(System.Windows.Input.MouseButtonEventArgs e)
@@ -228,6 +240,7 @@ public partial class PetWindow : Window
             if (!droppedHome) _manager.EndDrag();
             _mouseDragActive = false;
             _leftDownInsideWindow = false;
+            _grabOffset = null;
             ReleaseMouseCapture();
             return;
         }
@@ -279,6 +292,7 @@ public partial class PetWindow : Window
         if (!droppedHome) _manager.EndDrag();
         _mouseDragActive = false;
         _leftDownInsideWindow = false;
+        _grabOffset = null;
     }
 
     private async Task RenderCurrentFrameAsync()
