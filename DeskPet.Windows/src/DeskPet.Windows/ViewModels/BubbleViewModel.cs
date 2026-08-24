@@ -102,9 +102,10 @@ public partial class BubbleViewModel : ObservableObject
         ShowRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>打开输入框（Swift openInput 263-277）：提示语 + 保持显示。</summary>
+    /// <summary>打开输入框（Swift openInput 263-277）：提示语 + 保持显示。流式进行中忽略（防重入）。</summary>
     public void OpenInput()
     {
+        if (IsStreaming) return;   // 流式进行中不打开输入：避免输入框抢占流式中的气泡
         _hideAfter = null;
         _chatSessionActive = true;
         UserText = null;
@@ -128,6 +129,8 @@ public partial class BubbleViewModel : ObservableObject
     {
         _streamCts?.Cancel();
         _streamCts = null;
+        _streamActive = false;      // 迟到的流式增量全部丢弃，防止旧流文本复活（评审发现 2b）
+        _streamingText = "";
         _hideAfter = null;
         IsInputActive = false;
         IsStreaming = false;
@@ -140,12 +143,15 @@ public partial class BubbleViewModel : ObservableObject
     // MARK: - 对话发送（Swift send 296-325 + PetChatManager.send 87-184）
 
     /// <summary>
-    /// 发送当前输入：追加 user + 空 assistant 占位 → StreamChatAsync（增量打字机效果）→
-    /// 定稿/报错 → 持久化（cap = ChatHistoryCount）。
+    /// 发送当前输入：追加 user + 空 assistant 占位（本地状态机用）→ StreamChatAsync
+    /// （快照剔除流式占位：占位不得到达客户端，否则 BuildMessages 会重复追加 user 输入
+    /// 且空 assistant 回合进入请求体——评审发现 1）→ 定稿/报错 → 持久化（cap = ChatHistoryCount）。
     /// 未配置时显示 Swift 风格提示（PetBubbleManager.swift 300-313）而不调用客户端。
+    /// 流式进行中禁止重入（评审发现 2a：重入会取消旧流并污染 _streamActive 状态）。
     /// </summary>
     public async Task SendAsync()
     {
+        if (IsStreaming) return;   // 重入防护：新发送不得打断进行中的流
         var trimmed = InputText.Trim();
         if (trimmed.Length == 0) return;
         InputText = "";
@@ -191,7 +197,9 @@ public partial class BubbleViewModel : ObservableObject
         string reply;
         try
         {
-            reply = await _chat.StreamChatAsync(_history, trimmed, progress, cts.Token);
+            // 快照 = 已定稿历史 + 本次 user 消息；流式占位只属于本地状态机（IsStreaming=true 一律剔除）。
+            var payload = _history.Where(m => !m.IsStreaming).ToList();
+            reply = await _chat.StreamChatAsync(payload, trimmed, progress, cts.Token);
         }
         catch (OperationCanceledException)
         {
