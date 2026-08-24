@@ -22,6 +22,7 @@ public partial class PetWindow : Window
 
     private PetSkin? _skin;
     private PetManager? _manager;
+    private BubbleWindow? _bubble;
     private int _maxPixel;
     private double _dpiScale = 1.0;   // 物理像素 / WPF DIP（主屏缩放；Phase 1 单缩放假设，多屏混合 DPI 为已知限制）
     private DispatcherTimer? _timer;
@@ -86,6 +87,19 @@ public partial class PetWindow : Window
         _timer = new DispatcherTimer { Interval = TickInterval };
         _timer.Tick += OnTick;
         _timer.Start();
+
+        // 气泡窗（Task 5）：独立窗口跟随宠物、不抢焦点；托盘隐藏宠物时气泡一并隐藏。
+        _bubble = new BubbleWindow(
+            _manager, AppServices.Settings, AppServices.Chat, Width, Height, _dpiScale);
+        IsVisibleChanged += OnPetIsVisibleChanged;
+    }
+
+    /// <summary>托盘隐藏/显示宠物时，气泡窗跟随隐藏/恢复（避免气泡孤悬桌面）。</summary>
+    private void OnPetIsVisibleChanged(object? sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (_bubble == null) return;
+        if (IsVisible) _bubble.HandlePetShown();
+        else _bubble.HandlePetHidden();
     }
 
     // MARK: - 坐标换算
