@@ -264,6 +264,56 @@ public class RagManagerTests : IDisposable
         Assert.Equal(3, results.Count);
     }
 
+    // MARK: - 最终评审 I2：导入与删除/清空须在同一互斥门下串行化
+
+    [Fact]
+    public async Task Clear_WhileImportInFlight_WaitsAndDoesNotResurrectDocuments()
+    {
+        var embedding = new GatedEmbeddingService();
+        var store = CreateStore();
+        var manager = new RAGManager(embedding, store, _dir);
+        var path = WriteFile(_dir, "slow.md", "hello world deskpet rag, gated import content.");
+
+        embedding.Arm();
+        var import = manager.ImportAsync(path, "slow.md", CancellationToken.None);
+        await embedding.Entered.Task;                  // 导入已持门、卡在 embedding
+
+        var clear = manager.ClearAsync(CancellationToken.None);
+        Assert.False(clear.IsCompleted);               // 无门时 clear 立即完成 → 导入完成后复活文档
+
+        embedding.Release();
+        await Task.WhenAll(import, clear);
+
+        Assert.Empty(store.Chunks);                    // 清空发生在导入之后：无复活
+        Assert.Empty(manager.Documents);
+    }
+
+    [Fact]
+    public async Task Remove_WhileReimportInFlight_WaitsAndDoesNotResurrectDocument()
+    {
+        var embedding = new GatedEmbeddingService();
+        var store = CreateStore();
+        var manager = new RAGManager(embedding, store, _dir);
+        var path = WriteFile(_dir, "slow.md", new string('a', 1500));   // 4 分块
+        await manager.ImportAsync(path, "slow.md", CancellationToken.None);
+        var docId = Assert.Single(manager.Documents).Id;
+        Assert.Equal(4, store.Chunks.Count);
+
+        File.WriteAllText(path, new string('b', 600));                   // 覆盖重导（旧分块已删、卡在 embedding）
+        embedding.Arm();
+        var reimport = manager.ImportAsync(path, "slow.md", CancellationToken.None);
+        await embedding.Entered.Task;                  // 重导入已持门、卡在 embedding
+
+        var remove = manager.RemoveAsync(docId, CancellationToken.None);
+        Assert.False(remove.IsCompleted);              // 无门时 remove 先完成 → 重导入将其复活
+
+        embedding.Release();
+        await Task.WhenAll(reimport, remove);
+
+        Assert.Empty(store.Chunks);
+        Assert.Empty(manager.Documents);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_dir))
@@ -307,5 +357,38 @@ public class RagManagerTests : IDisposable
             CallCount++;
             return Task.FromResult<IReadOnlyList<float[]>>(Array.Empty<float[]>());
         }
+    }
+
+    /// <summary>可武装的慢 embedding：未武装时立即返回；武装后下一次调用卡住直到 <see cref="Release"/>。
+    /// 用于确定性制造"导入进行中"（导入已持门、卡在向量化）。</summary>
+    private sealed class GatedEmbeddingService : IEmbeddingService
+    {
+        private TaskCompletionSource _entered = Create();
+        private TaskCompletionSource? _block;
+
+        /// <summary>最近一次 EmbedAsync 已到达（导入已持门并卡在向量化）。</summary>
+        public TaskCompletionSource Entered => _entered;
+
+        public async Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct)
+        {
+            _entered.TrySetResult();
+            if (_block is { } block)
+            {
+                await block.Task;
+                ct.ThrowIfCancellationRequested();
+            }
+            return texts.Select(t => new float[] { 1f, 0f, 0f, 0f }).ToList();
+        }
+
+        /// <summary>武装下一次调用：阻塞直到 <see cref="Release"/>（并重置 Entered 信号）。</summary>
+        public void Arm()
+        {
+            _entered = Create();
+            _block = Create();
+        }
+
+        public void Release() => _block?.TrySetResult();
+
+        private static TaskCompletionSource Create() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

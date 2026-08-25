@@ -116,29 +116,48 @@ public sealed class RAGManager
         }
     }
 
-    /// <summary>删除一个文档：按注册表跟踪的分块 id 清理向量库，移除注册表条目并持久化（Swift <c>removeDocument</c> 189-194）。</summary>
+    /// <summary>
+    /// 删除一个文档：按注册表跟踪的分块 id 清理向量库，移除注册表条目并持久化（Swift <c>removeDocument</c> 189-194）。
+    /// 与导入共用 <c>_importGate</c> 串行化（最终评审 I2：否则可插入导入中段，导入收尾会复活文档）。
+    /// </summary>
     public async Task RemoveAsync(string documentId, CancellationToken ct = default)
     {
-        RAGDocument? document;
-        lock (_lock) { document = _documents.FirstOrDefault(d => d.Id == documentId); }
-        if (document is null) return;
-
-        await _store.DeleteAsync(document.ChunkIds, ct);
-        lock (_lock)
+        await _importGate.WaitAsync(ct);
+        try
         {
-            _documents.Remove(document);
-            PersistRegistry();
+            RAGDocument? document;
+            lock (_lock) { document = _documents.FirstOrDefault(d => d.Id == documentId); }
+            if (document is null) return;
+
+            await _store.DeleteAsync(document.ChunkIds, ct);
+            lock (_lock)
+            {
+                _documents.Remove(document);
+                PersistRegistry();
+            }
+        }
+        finally
+        {
+            _importGate.Release();
         }
     }
 
-    /// <summary>清空向量库与注册表并持久化（Swift <c>clearAll</c> 196-200）。</summary>
+    /// <summary>清空向量库与注册表并持久化（Swift <c>clearAll</c> 196-200）。与导入共用 <c>_importGate</c> 串行化（最终评审 I2）。</summary>
     public async Task ClearAsync(CancellationToken ct = default)
     {
-        await _store.ClearAsync(ct);
-        lock (_lock)
+        await _importGate.WaitAsync(ct);
+        try
         {
-            _documents.Clear();
-            PersistRegistry();
+            await _store.ClearAsync(ct);
+            lock (_lock)
+            {
+                _documents.Clear();
+                PersistRegistry();
+            }
+        }
+        finally
+        {
+            _importGate.Release();
         }
     }
 

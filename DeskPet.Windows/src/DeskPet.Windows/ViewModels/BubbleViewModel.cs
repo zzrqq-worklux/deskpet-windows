@@ -201,10 +201,13 @@ public partial class BubbleViewModel : ObservableObject
             var payload = _history.Where(m => !m.IsStreaming).ToList();
             reply = await _chat.StreamChatAsync(payload, trimmed, progress, cts.Token);
         }
-        catch (OperationCanceledException)
+        // 用户 Dismiss 打断（token 已取消）：静默收尾，不落历史（UI 已清空，Swift 取消语义）。
+        // 注意：HttpClient 默认 100s 超时抛 TaskCanceledException 但 token 未取消 → 不匹配此过滤器，
+        // 落入下方通用错误路径（Swift 176-180 对所有错误置 lastError，不得静默吞掉）。
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
             _streamActive = false;
-            _history.RemoveAll(m => m.Id == assistantId);   // 会话被打断：不落历史（与错误路径一致）
+            _history.RemoveAll(m => m.Id == assistantId);
             return;
         }
         catch (Exception ex)
@@ -212,7 +215,12 @@ public partial class BubbleViewModel : ObservableObject
             _streamActive = false;
             _history.RemoveAll(m => m.Id == assistantId);   // 失败移除空占位（Swift 177-179）
             UserText = Truncate(trimmed);
-            PetText = Truncate(ex is PetChatException ? ex.Message : "出错了，再等等我吧～");
+            PetText = Truncate(ex switch
+            {
+                PetChatException pce => pce.Message,
+                TaskCanceledException => "请求超时了，再试一次吧～",
+                _ => "出错了，再等等我吧～",
+            });
             IsStreaming = false;
             _hideAfter = DateTime.UtcNow.AddSeconds(ErrorShowSeconds);
             Persist();
@@ -250,6 +258,7 @@ public partial class BubbleViewModel : ObservableObject
 
         // 正在输入 / 正在聊天 / 正在流式时不自动说话（Swift 349）；回窝时不说话（350）
         if (IsInputActive || _chatSessionActive || IsStreaming) return;
+        if (_hideAfter != null) return;   // 定时气泡仍在展示中不覆盖（Swift current?.expiresAt == nil，349）
         if (_pet.LifeState != PetLifeState.Roaming) return;
         if (now < _nextSpeechAt) return;
 

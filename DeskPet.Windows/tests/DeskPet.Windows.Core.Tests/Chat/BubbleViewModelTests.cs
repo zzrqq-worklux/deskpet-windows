@@ -158,6 +158,63 @@ public class BubbleViewModelTests : IDisposable
         Assert.False(vm.IsStreaming);
     }
 
+    // MARK: - 最终评审 C1：HttpClient 默认超时（TaskCanceledException，token 未取消）不得卡死气泡
+
+    [Fact]
+    public async Task SendAsync_ClientTimeout_ShowsFriendlyErrorAndAllowsRetry()
+    {
+        var chat = new TimeoutThenSuccessChat();
+        var (vm, _, _, _) = await NewVmAsync(chat);
+
+        vm.OpenInput();
+        vm.InputText = "你好";
+        await vm.SendAsync();
+
+        Assert.False(vm.IsStreaming);
+        Assert.Contains("超时", vm.PetText);      // 友好错误提示，而非 "…"
+        Assert.Equal("你好", vm.UserText);
+        Assert.Single(vm.History);                // 用户消息保留、流式占位已移除（错误路径语义）
+        Assert.True(vm.IsChatConfigured);
+
+        // 恢复性：无需重启，可直接再次发送并成功定稿
+        vm.OpenInput();
+        Assert.True(vm.IsInputActive);
+        vm.InputText = "再试一次";
+        await vm.SendAsync();
+
+        Assert.False(vm.IsStreaming);
+        Assert.Equal("回复", vm.PetText);
+        Assert.Equal(2, chat.InvocationCount);
+    }
+
+    // MARK: - 最终评审 I1：定时自言自语不得覆盖仍在展示的定时气泡
+
+    [Fact]
+    public async Task SpeechTick_PhraseBubbleStillShowing_DoesNotOverwriteIt()
+    {
+        var (vm, _, _, _) = await NewVmAsync(new ImmediateChat());
+        var now = DateTime.UtcNow;                // 晚于 VM 构造时刻：now+21s 必已过初始 20s 首句延迟
+        const string phrase = "我在看风景呢～";
+
+        vm.ShowPhrase(phrase, now.AddSeconds(19));   // 8 秒展示窗：到 now+27s 才过期
+        vm.OnSpeechTick(now.AddSeconds(21));          // 已到自言自语点，但台词仍在展示窗内
+
+        Assert.Equal(phrase, vm.PetText);             // 未被随机台词覆盖
+    }
+
+    [Fact]
+    public async Task SpeechTick_NoTimedBubbleWhenDue_SpeaksPhrase()
+    {
+        var (vm, _, _, _) = await NewVmAsync(new ImmediateChat());
+        var now = DateTime.UtcNow;
+
+        vm.OnSpeechTick(now.AddSeconds(25));          // 无定时气泡遮挡 → 正常自言自语
+
+        Assert.NotNull(vm.PetText);
+        Assert.Contains(vm.PetText, BubblePhrases.Phrases[PetAction.Idle]);
+        Assert.True(vm.HasContent);
+    }
+
     // MARK: - 测试辅助
 
     private async Task<(BubbleViewModel Vm, FakeSettings Settings, ChatHistoryStore Store, string Path)> NewVmAsync(
@@ -221,6 +278,28 @@ public class BubbleViewModelTests : IDisposable
             }
             ct.ThrowIfCancellationRequested();
             return "unreachable";
+        }
+
+        public Task<bool> TestConnectionAsync(CancellationToken ct) => Task.FromResult(true);
+    }
+
+    /// <summary>首次调用抛 TaskCanceledException（模拟 HttpClient 默认 100s 超时：token 未被取消），之后成功。</summary>
+    private sealed class TimeoutThenSuccessChat : IChatClient
+    {
+        public int InvocationCount;
+
+        public async Task<string> StreamChatAsync(
+            IReadOnlyList<ChatMessage> history, string userInput, IProgress<string>? progress, CancellationToken ct)
+        {
+            InvocationCount++;
+            if (InvocationCount == 1)
+            {
+                await Task.Yield();
+                throw new TaskCanceledException();   // 超时取消 ≠ 用户取消：token 未标记
+            }
+            progress?.Report("回");
+            progress?.Report("复");
+            return "回复";
         }
 
         public Task<bool> TestConnectionAsync(CancellationToken ct) => Task.FromResult(true);
